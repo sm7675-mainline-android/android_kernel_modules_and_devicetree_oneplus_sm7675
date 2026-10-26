@@ -499,7 +499,7 @@
 		compatible = "oplus,monitor";
 		oplus,topic-update-interval = <60000>;
 
-		track,fast_chg_break_t_thd = <1400>;
+		track,fast_chg_break_t_thd = <2500>;
 		track,general_chg_break_t_thd = <300>;
 		track,voocphy_type = <2>;
 		track,wired_max_power = <100000>;
@@ -507,6 +507,7 @@
 
 		track,gauge_status_ctrl;
 		track,external_gauge_num = <1>;
+		track,track_ver = <TRACK_VER_4_0>;
 	};
 
 	oplus_virtual_cp: oplus,virtual_cp {
@@ -1500,6 +1501,9 @@
 			0x3d 0x04 0x96 0x45 0xed 0xfa /* RA_PARA_FILTER 64237 */
 			0xeb 0x03 0x89 0x45 0x46 /* MIN_DOD_RES 70 */
 			0x73 0x04 0x8e 0x45 0xb6 0x3 /* RA_PARA_FILTER 950 */
+			0x11 0x04 0x9a 0x45 0x08 0x07 /* Qmax Max Time 1800s */
+			0x26 0x04 0x85 0x45 0x08 0x07 /* RemCapUpdateTime 1800s */
+			0xea 0x03 0x9e 0x45 0x32      /* Max V Delta 50mV */
 			>;
 	};
 };
