@@ -13,14 +13,12 @@ LINUXINCLUDE   += -I$(NFC_ROOT)/../../../qcom/opensource/securemsm-kernel/includ
 obj-$(CONFIG_NXP_NFC_I2C) += nxp-nci.o
 
 #source files
-nxp-nci-objs += nfc/ese_cold_reset.o \
+nxp-nci-y := nfc/ese_cold_reset.o \
                 nfc/common.o \
 		nfc/common_nxp.o \
 		nfc/common_qcom.o \
-		nfc/i2c_drv.o \
-#ifdef CONFIG_NXP_NFC_VBAT_MONITOR
-               nfc_vbat_monitor.o
-#endif
+		nfc/i2c_drv.o
+nxp-nci-$(CONFIG_NXP_NFC_VBAT_MONITOR) += nfc/nfc_vbat_monitor.o
 
 ccflags-y += -DDYNAMIC_DEBUG_MODULE
 #ifdef CONFIG_NXP_NFC_VBAT_MONITOR

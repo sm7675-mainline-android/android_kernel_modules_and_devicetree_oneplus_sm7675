@@ -485,14 +485,14 @@ static int checkNfcChip(struct device *dev)
         }
     }
 }
-int nfc_i2c_dev_probe(struct i2c_client *client, const struct i2c_device_id *id)
+int nfc_i2c_dev_probe(struct i2c_client *client)
 {
 	int ret = 0;
 	struct nfc_dev *nfc_dev = NULL;
 	struct i2c_dev *i2c_dev = NULL;
 	struct platform_configs *nfc_configs = NULL;
 	struct platform_gpio *nfc_gpio = NULL;
-	pr_debug("NxpDrv: %s: enter\n", __func__);
+	dev_dbg(&client->dev, "NFC probe node=%pOF\n", client->dev.of_node);
 	ret = checkNfcChip(&client->dev);
 	if (ret) {
 		pr_err("NxpDrv: %s: failed to checkNfcChip\n", __func__);
