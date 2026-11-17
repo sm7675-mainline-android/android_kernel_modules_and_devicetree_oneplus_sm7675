@@ -569,7 +569,7 @@ static inline int ipa3_qmi_send_mhi_cleanup_request(
 
 static int rmnet_ipa3_notify_nat_move_res(bool success)
 {
-	return -EPERM
+	return -EPERM;
 }
 
 static inline int ipa3_wwan_set_modem_perf_profile(
