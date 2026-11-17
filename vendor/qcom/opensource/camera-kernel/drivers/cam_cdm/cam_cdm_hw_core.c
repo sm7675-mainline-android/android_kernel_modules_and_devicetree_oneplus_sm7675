@@ -2349,7 +2349,7 @@ static int cam_hw_cdm_component_bind(struct device *dev,
 				sizeof(work_q_name));
 		snprintf(work_q_name + len, sizeof(work_q_name) - len, "%d_%d", cdm_hw->soc_info.index, i);
 		cdm_core->bl_fifo[i].work_queue = alloc_workqueue(work_q_name,
-				WQ_UNBOUND | WQ_MEM_RECLAIM | WQ_SYSFS,
+				WQ_UNBOUND | WQ_MEM_RECLAIM | WQ_SYSFS | WQ_HIGHPRI,
 				CAM_CDM_INFLIGHT_WORKS);
 		if (!cdm_core->bl_fifo[i].work_queue) {
 			CAM_ERR(CAM_CDM,
@@ -2594,10 +2594,9 @@ int cam_hw_cdm_probe(struct platform_device *pdev)
 	return rc;
 }
 
-int cam_hw_cdm_remove(struct platform_device *pdev)
+void cam_hw_cdm_remove(struct platform_device *pdev)
 {
 	component_del(&pdev->dev, &cam_hw_cdm_component_ops);
-	return 0;
 }
 
 struct platform_driver cam_hw_cdm_driver = {

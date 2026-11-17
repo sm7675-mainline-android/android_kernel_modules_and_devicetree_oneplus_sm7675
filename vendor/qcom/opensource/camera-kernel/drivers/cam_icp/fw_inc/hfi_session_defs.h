@@ -66,7 +66,7 @@ struct mem_map_region_data {
 struct hfi_cmd_ipe_bps_map {
 	uint64_t                   user_data;
 	uint32_t                   mem_map_request_num;
-	struct mem_map_region_data mem_map_region_sets[1];
+	struct mem_map_region_data mem_map_region_sets[];
 } __packed;
 
 /**

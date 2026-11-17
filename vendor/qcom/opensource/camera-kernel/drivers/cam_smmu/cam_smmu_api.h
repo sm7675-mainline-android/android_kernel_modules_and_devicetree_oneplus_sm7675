@@ -141,6 +141,7 @@ struct region_buf_info {
 	struct dma_buf *buf;
 	struct dma_buf_attachment *attach;
 	struct sg_table *table;
+	size_t mapped_len;
 };
 
 /**

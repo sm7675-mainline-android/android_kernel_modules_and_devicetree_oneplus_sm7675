@@ -1612,7 +1612,7 @@ static ssize_t app0_get_fac_calib_show(struct kobject *kobj,
 }
 
 static ssize_t app0_tof_output_read(struct file * fp, struct kobject * kobj,
-	struct bin_attribute * attr, char *buf,
+	const struct bin_attribute * attr, char *buf,
 	loff_t off, size_t size)
 {
 //	struct device *dev = kobj_to_dev(kobj);
@@ -1743,7 +1743,7 @@ static struct attribute *tof_app0_attrs[] = {
 	&oplus_attr_app0_get_distance.attr,
 	NULL,
 };
-static struct bin_attribute *tof_app0_bin_attrs[] = {
+static const struct bin_attribute *const tof_app0_bin_attrs[] = {
 	&bin_attr_app0_tof_output,
 	NULL,
 };
@@ -3033,7 +3033,7 @@ gen_err:
 	return error;
 }
 
-static int tof_probe(struct i2c_client *client, const struct i2c_device_id *idp)
+static int tof_probe(struct i2c_client *client)
 {
 	struct tof_sensor_chip *tof_chip;
 	int error = 0;

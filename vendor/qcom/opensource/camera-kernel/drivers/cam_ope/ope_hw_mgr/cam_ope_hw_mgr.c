@@ -3324,9 +3324,7 @@ static int cam_ope_mgr_prepare_hw_update(void *hw_priv,
 	ope_req = ctx_data->req_list[request_idx];
 	ope_req->req_idx = request_idx;
 	ope_req->cdm_cmd =
-		kzalloc(((sizeof(struct cam_cdm_bl_request)) +
-			((OPE_MAX_CDM_BLS - 1) *
-			sizeof(struct cam_cdm_bl_cmd))),
+		kzalloc(struct_size(ope_req->cdm_cmd, cmd, OPE_MAX_CDM_BLS),
 			GFP_KERNEL);
 	if (!ope_req->cdm_cmd) {
 		CAM_ERR(CAM_OPE, "Cdm mem alloc failed ctx:%d req_idx:%d",

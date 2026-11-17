@@ -2368,6 +2368,8 @@ static int cam_soc_util_get_dt_gpio_req_tbl(struct device_node *of_node,
 		CAM_ERR(CAM_UTIL, "gpio-req-tbl-num 0");
 		return 0;
 	}
+	if (count > U8_MAX)
+		return -EOVERFLOW;
 
 	val_array = kcalloc(count, sizeof(uint32_t), GFP_KERNEL);
 	if (!val_array)
@@ -2393,6 +2395,7 @@ static int cam_soc_util_get_dt_gpio_req_tbl(struct device_node *of_node,
 		if (val_array[i] >= gpio_array_size) {
 			CAM_ERR(CAM_UTIL, "gpio req tbl index %d invalid",
 				val_array[i]);
+			rc = -EINVAL;
 			goto free_gpio_req_tbl;
 		}
 		gconf->cam_gpio_req_tbl[i].gpio = gpio_array[val_array[i]];
@@ -2431,6 +2434,7 @@ static int cam_soc_util_get_dt_gpio_req_tbl(struct device_node *of_node,
 
 free_gpio_req_tbl:
 	kfree(gconf->cam_gpio_req_tbl);
+	gconf->cam_gpio_req_tbl = NULL;
 free_val_array:
 	kfree(val_array);
 	gconf->cam_gpio_req_tbl_size = 0;
@@ -2440,9 +2444,9 @@ free_val_array:
 
 static int cam_soc_util_get_gpio_info(struct cam_hw_soc_info *soc_info)
 {
-	int32_t rc = 0, i = 0;
+	int32_t rc = 0, i = 0, gpio;
 	uint16_t *gpio_array = NULL;
-	int16_t gpio_array_size = 0;
+	int gpio_array_size;
 	struct cam_soc_gpio_data *gconf = NULL;
 	struct device_node *of_node = NULL;
 
@@ -2459,8 +2463,12 @@ static int cam_soc_util_get_gpio_info(struct cam_hw_soc_info *soc_info)
 
 	gpio_array_size = of_gpio_count(of_node);
 
-	if (gpio_array_size <= 0)
+	if (gpio_array_size == -ENOENT || !gpio_array_size)
 		return 0;
+	if (gpio_array_size < 0)
+		return gpio_array_size;
+	if (gpio_array_size > U8_MAX)
+		return -EOVERFLOW;
 
 	CAM_DBG(CAM_UTIL, "gpio count %d", gpio_array_size);
 
@@ -2471,7 +2479,14 @@ static int cam_soc_util_get_gpio_info(struct cam_hw_soc_info *soc_info)
 	}
 
 	for (i = 0; i < gpio_array_size; i++) {
-		gpio_array[i] = of_get_gpio(of_node, i);
+		gpio = of_get_named_gpio(of_node, "gpios", i);
+		if (gpio < 0 || gpio > U16_MAX) {
+			rc = gpio < 0 ? gpio : -EOVERFLOW;
+			CAM_ERR(CAM_UTIL, "GPIO lookup failed node=%pOF index=%d rc=%d",
+				of_node, i, rc);
+			goto free_gpio_array;
+		}
+		gpio_array[i] = gpio;
 		CAM_DBG(CAM_UTIL, "gpio_array[%d] = %d", i, gpio_array[i]);
 	}
 
@@ -2500,11 +2515,14 @@ static int cam_soc_util_get_gpio_info(struct cam_hw_soc_info *soc_info)
 
 	gconf->cam_gpio_common_tbl_size = gpio_array_size;
 	soc_info->gpio_data = gconf;
+	CAM_INFO(CAM_UTIL, "GPIO table ready node=%pOF count=%d requests=%u",
+		of_node, gpio_array_size, gconf->cam_gpio_req_tbl_size);
 	kfree(gpio_array);
 
 	return rc;
 
 free_gpio_conf:
+	kfree(gconf->cam_gpio_req_tbl);
 	kfree(gconf);
 free_gpio_array:
 	kfree(gpio_array);
@@ -3643,6 +3661,7 @@ static int cam_soc_util_dump_cont_reg_range(
 {
 	int         i = 0, rc = 0;
 	uint32_t    write_idx = 0, reg_map_size;
+	uint32_t   *dump_data;
 
 	if (!soc_info || !dump_out_buf || !reg_read || !cmd_buf_end) {
 		CAM_ERR(CAM_UTIL,
@@ -3677,6 +3696,8 @@ static int cam_soc_util_dump_cont_reg_range(
 	}
 
 	write_idx = dump_out_buf->bytes_written / sizeof(uint32_t);
+	dump_data = (void *)((uint8_t *)dump_out_buf +
+		offsetof(struct cam_reg_dump_out_buffer, dump_data));
 	reg_map_size = (uint32_t)soc_info->reg_map[base_idx].size;
 	for (i = 0; i < reg_read->num_values; i++) {
 
@@ -3686,9 +3707,9 @@ static int cam_soc_util_dump_cont_reg_range(
 		if (rc)
 			continue;
 
-		dump_out_buf->dump_data[write_idx++] = reg_read->offset +
+		dump_data[write_idx++] = reg_read->offset +
 			(i * sizeof(uint32_t));
-		dump_out_buf->dump_data[write_idx++] =
+		dump_data[write_idx++] =
 			cam_soc_util_r(soc_info, base_idx,
 			(reg_read->offset + (i * sizeof(uint32_t))));
 		dump_out_buf->bytes_written += (2 * sizeof(uint32_t));
@@ -3705,6 +3726,7 @@ static int cam_soc_util_dump_dmi_reg_range(
 {
 	int        i = 0, rc = 0;
 	uint32_t   write_idx = 0, reg_map_size;
+	uint32_t  *dump_data;
 
 	if (!soc_info || !dump_out_buf || !dmi_read || !cmd_buf_end) {
 		CAM_ERR(CAM_UTIL,
@@ -3757,6 +3779,8 @@ static int cam_soc_util_dump_dmi_reg_range(
 	}
 
 	write_idx = dump_out_buf->bytes_written / sizeof(uint32_t);
+	dump_data = (void *)((uint8_t *)dump_out_buf +
+		offsetof(struct cam_reg_dump_out_buffer, dump_data));
 	reg_map_size = (uint32_t)soc_info->reg_map[base_idx].size;
 	for (i = 0; i < dmi_read->num_pre_writes; i++) {
 		rc = cam_soc_util_reg_addr_validation(reg_map_size,
@@ -3768,9 +3792,9 @@ static int cam_soc_util_dump_dmi_reg_range(
 		cam_soc_util_w_mb(soc_info, base_idx,
 			dmi_read->pre_read_config[i].offset,
 			dmi_read->pre_read_config[i].value);
-		dump_out_buf->dump_data[write_idx++] =
+		dump_data[write_idx++] =
 			dmi_read->pre_read_config[i].offset;
-		dump_out_buf->dump_data[write_idx++] =
+		dump_data[write_idx++] =
 			dmi_read->pre_read_config[i].value;
 		dump_out_buf->bytes_written += (2 * sizeof(uint32_t));
 	}
@@ -3780,9 +3804,9 @@ static int cam_soc_util_dump_dmi_reg_range(
 		"dmi_data_read");
 	if (!rc) {
 		for (i = 0; i < dmi_read->dmi_data_read.num_values; i++) {
-			dump_out_buf->dump_data[write_idx++] =
+			dump_data[write_idx++] =
 				dmi_read->dmi_data_read.offset;
-			dump_out_buf->dump_data[write_idx++] =
+			dump_data[write_idx++] =
 				cam_soc_util_r_mb(soc_info, base_idx,
 				dmi_read->dmi_data_read.offset);
 			dump_out_buf->bytes_written += (2 * sizeof(uint32_t));
@@ -4007,6 +4031,7 @@ static int cam_soc_util_user_reg_dump(
 	int rc = 0;
 	int i;
 	struct cam_reg_read_info  *reg_read_info = NULL;
+	struct cam_reg_read_info  *read_ranges;
 
 	if (!dump_args || !reg_dump_desc || !soc_info) {
 		CAM_ERR(CAM_UTIL,
@@ -4014,9 +4039,11 @@ static int cam_soc_util_user_reg_dump(
 			dump_args, reg_dump_desc, soc_info);
 		return -EINVAL;
 	}
+	read_ranges = (void *)((uint8_t *)reg_dump_desc +
+		offsetof(struct cam_reg_dump_desc, read_range));
 	for (i = 0; i < reg_dump_desc->num_read_range; i++) {
 
-		reg_read_info = &reg_dump_desc->read_range[i];
+		reg_read_info = &read_ranges[i];
 		if (reg_read_info->type ==
 				CAM_REG_DUMP_READ_TYPE_CONT_RANGE) {
 			rc = cam_soc_util_dump_cont_reg_range_user_buf(
@@ -4067,6 +4094,8 @@ int cam_soc_util_reg_dump_to_cmd_buf(void *ctx,
 	struct cam_reg_dump_desc         *reg_dump_desc = NULL;
 	struct cam_reg_dump_out_buffer   *dump_out_buf = NULL;
 	struct cam_reg_read_info         *reg_read_info = NULL;
+	struct cam_reg_read_info         *read_ranges;
+	uint32_t                        *dump_set_offsets;
 	struct cam_hw_soc_info           *soc_info;
 	uint32_t                          reg_base_idx = 0;
 
@@ -4127,7 +4156,13 @@ int cam_soc_util_reg_dump_to_cmd_buf(void *ctx,
 	CAM_DBG(CAM_UTIL,
 		"Buffer params start [%pK] input_end [%pK] buf_end [%pK]",
 		cmd_buf_start, cmd_in_data_end, cmd_buf_end);
+	if (cmd_desc->length < sizeof(struct cam_reg_dump_input_info)) {
+		rc = -EINVAL;
+		goto end;
+	}
 	reg_input_info = (struct cam_reg_dump_input_info *) cmd_buf_start;
+	dump_set_offsets = (void *)(cmd_buf_start +
+		offsetof(struct cam_reg_dump_input_info, dump_set_offsets));
 	if ((reg_input_info->num_dump_sets > 1) && (sizeof(uint32_t) >
 		((U32_MAX - sizeof(struct cam_reg_dump_input_info)) /
 		(reg_input_info->num_dump_sets - 1)))) {
@@ -4154,18 +4189,24 @@ int cam_soc_util_reg_dump_to_cmd_buf(void *ctx,
 		req_id, ctx, reg_input_info->num_dump_sets);
 	for (i = 0; i < reg_input_info->num_dump_sets; i++) {
 		if ((cmd_in_data_end - cmd_buf_start) <= (uintptr_t)
-			reg_input_info->dump_set_offsets[i]) {
+			dump_set_offsets[i]) {
 			CAM_ERR(CAM_UTIL,
 				"Invalid dump set offset: [%pK], cmd_buf_start: [%pK] cmd_in_data_end: [%pK]",
-				(uintptr_t)reg_input_info->dump_set_offsets[i],
+				(uintptr_t)dump_set_offsets[i],
 				cmd_buf_start, cmd_in_data_end);
 			rc = -EINVAL;
 			goto end;
 		}
 
 		reg_dump_desc = (struct cam_reg_dump_desc *)
-			(cmd_buf_start +
-			(uintptr_t)reg_input_info->dump_set_offsets[i]);
+			(cmd_buf_start + (uintptr_t)dump_set_offsets[i]);
+		if (cmd_in_data_end - (uintptr_t)reg_dump_desc <
+			offsetof(struct cam_reg_dump_desc, read_range)) {
+			rc = -EINVAL;
+			goto end;
+		}
+		read_ranges = (void *)((uint8_t *)reg_dump_desc +
+			offsetof(struct cam_reg_dump_desc, read_range));
 		if ((reg_dump_desc->num_read_range > 1) &&
 			(sizeof(struct cam_reg_read_info) > ((U32_MAX -
 			sizeof(struct cam_reg_dump_desc)) /
@@ -4190,7 +4231,7 @@ int cam_soc_util_reg_dump_to_cmd_buf(void *ctx,
 		}
 
 		if ((cmd_buf_end - cmd_buf_start) <= (uintptr_t)
-			(reg_dump_desc->dump_buffer_offset +
+			((uintptr_t)reg_dump_desc->dump_buffer_offset +
 			sizeof(struct cam_reg_dump_out_buffer))) {
 			CAM_ERR(CAM_UTIL,
 				"Invalid out buffer offset: [%pK],  cmd_buf_start: [%pK] cmd_buf_end: [%pK]",
@@ -4219,7 +4260,7 @@ int cam_soc_util_reg_dump_to_cmd_buf(void *ctx,
 			goto end;
 		}
 
-		if (reg_base_idx > soc_info->num_reg_map) {
+		if (reg_base_idx >= soc_info->num_reg_map) {
 			CAM_ERR(CAM_UTIL,
 				"Invalid reg base idx: %d num reg map: %d",
 				reg_base_idx, soc_info->num_reg_map);
@@ -4260,7 +4301,7 @@ int cam_soc_util_reg_dump_to_cmd_buf(void *ctx,
 			CAM_DBG(CAM_UTIL,
 				"Number of bytes written to cmd buffer: %u req_id: %llu",
 				dump_out_buf->bytes_written, req_id);
-			reg_read_info = &reg_dump_desc->read_range[j];
+			reg_read_info = &read_ranges[j];
 			if (reg_read_info->type ==
 				CAM_REG_DUMP_READ_TYPE_CONT_RANGE) {
 				rc = cam_soc_util_dump_cont_reg_range(soc_info,

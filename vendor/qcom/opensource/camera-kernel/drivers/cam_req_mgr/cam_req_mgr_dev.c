@@ -914,6 +914,10 @@ int cam_register_subdev(struct cam_subdev *csd)
 	mutex_lock(&g_dev.dev_lock);
 
 	sd = &csd->sd;
+	if (sd->v4l2_dev) {
+		rc = -EBUSY;
+		goto reg_fail;
+	}
 	v4l2_subdev_init(sd, csd->ops);
 	sd->internal_ops = csd->internal_ops;
 	snprintf(sd->name, V4L2_SUBDEV_NAME_SIZE, "%s", csd->name);
@@ -923,10 +927,6 @@ int cam_register_subdev(struct cam_subdev *csd)
 	sd->entity.num_pads = 0;
 	sd->entity.pads = NULL;
 	sd->entity.function = csd->ent_function;
-
-	list_add(&csd->list, &cam_req_mgr_ordered_sd_list);
-	list_sort(NULL, &cam_req_mgr_ordered_sd_list,
-		cam_req_mgr_ordered_list_cmp);
 
 	rc = v4l2_device_register_subdev(g_dev.v4l2_dev, sd);
 	if (rc) {
@@ -938,6 +938,7 @@ int cam_register_subdev(struct cam_subdev *csd)
 	if (rc) {
 		CAM_ERR(CAM_CRM, "Failed to register subdev node: %s, rc: %d",
 			sd->name, rc);
+		v4l2_device_unregister_subdev(sd);
 		goto reg_fail;
 	}
 
@@ -946,6 +947,9 @@ int cam_register_subdev(struct cam_subdev *csd)
 		CAM_DBG(CAM_CRM, "created node :%s", sd->entity.name);
 	}
 
+	list_add(&csd->list, &cam_req_mgr_ordered_sd_list);
+	list_sort(NULL, &cam_req_mgr_ordered_sd_list,
+		cam_req_mgr_ordered_list_cmp);
 	g_dev.count++;
 
 reg_fail:
@@ -956,14 +960,20 @@ EXPORT_SYMBOL(cam_register_subdev);
 
 int cam_unregister_subdev(struct cam_subdev *csd)
 {
+	if (!csd)
+		return -EINVAL;
+
 	if (!g_dev.state) {
 		CAM_ERR(CAM_CRM, "camera root device not ready yet");
 		return -ENODEV;
 	}
 
 	mutex_lock(&g_dev.dev_lock);
-	v4l2_device_unregister_subdev(&csd->sd);
-	g_dev.count--;
+	if (csd->sd.v4l2_dev == g_dev.v4l2_dev) {
+		list_del_init(&csd->list);
+		v4l2_device_unregister_subdev(&csd->sd);
+		g_dev.count--;
+	}
 	mutex_unlock(&g_dev.dev_lock);
 
 	return 0;
@@ -1084,10 +1094,9 @@ static const struct component_master_ops cam_req_mgr_component_master_ops = {
 	.unbind = cam_req_mgr_component_master_unbind,
 };
 
-static int cam_req_mgr_remove(struct platform_device *pdev)
+static void cam_req_mgr_remove(struct platform_device *pdev)
 {
 	component_master_del(&pdev->dev, &cam_req_mgr_component_master_ops);
-	return 0;
 }
 
 static int cam_req_mgr_probe(struct platform_device *pdev)

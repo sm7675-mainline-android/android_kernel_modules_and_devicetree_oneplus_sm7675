@@ -876,7 +876,7 @@ int cam_synx_obj_driver_init(void)
 	/* zero will be considered an invalid slot */
 	set_bit(0, g_cam_synx_obj_dev->bitmap);
 
-	CAM_DBG(CAM_SYNX, "Camera synx obj driver initialized");
+	CAM_INFO(CAM_SYNX, "Camera synx obj driver initialized");
 	return 0;
 
 deinit_driver:

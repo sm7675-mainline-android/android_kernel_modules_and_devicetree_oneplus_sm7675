@@ -525,7 +525,10 @@ static int cam_flash_component_bind(struct device *dev,
 	mutex_init(&(fctrl->flash_mutex));
 
 	fctrl->flash_state = CAM_FLASH_STATE_INIT;
-	CAM_DBG(CAM_FLASH, "Component bound successfully");
+	CAM_INFO(CAM_FLASH,
+		"Flash bound node=%pOF slot=%u flash_sources=%u torch_sources=%u subdev=%s",
+		fctrl->of_node, fctrl->soc_info.index, fctrl->flash_num_sources,
+		fctrl->torch_num_sources, fctrl->v4l2_dev_str.sd.name);
 	return rc;
 
 free_cci_resource:
@@ -575,10 +578,9 @@ const static struct component_ops cam_flash_component_ops = {
 	.unbind = cam_flash_component_unbind,
 };
 
-static int cam_flash_platform_remove(struct platform_device *pdev)
+static void cam_flash_platform_remove(struct platform_device *pdev)
 {
 	component_del(&pdev->dev, &cam_flash_component_ops);
-	return 0;
 }
 
 static int32_t cam_flash_platform_probe(struct platform_device *pdev)
@@ -748,14 +750,12 @@ const static struct component_ops cam_flash_i2c_component_ops = {
 	.unbind = cam_flash_i2c_component_unbind,
 };
 
-static int32_t cam_flash_i2c_driver_probe(struct i2c_client *client,
-	const struct i2c_device_id *id)
+static int32_t cam_flash_i2c_driver_probe(struct i2c_client *client)
 {
 	int rc = 0;
 
-	if (client == NULL || id == NULL) {
-		CAM_ERR(CAM_FLASH, "Invalid Args client: %pK id: %pK",
-			client, id);
+	if (client == NULL) {
+		CAM_ERR(CAM_FLASH, "Invalid Args client: %pK", client);
 		return -EINVAL;
 	}
 

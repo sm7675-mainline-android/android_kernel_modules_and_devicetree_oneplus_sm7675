@@ -410,7 +410,7 @@ struct hfi_cmd_prop {
 	uint32_t size;
 	uint32_t pkt_type;
 	uint32_t num_prop;
-	uint32_t prop_data[1];
+	uint32_t prop_data[];
 } __packed;
 
 /**
@@ -468,7 +468,7 @@ struct hfi_cmd_mem_region_info {
  */
 struct hfi_cmd_config_mem_regions {
 	uint32_t num_valid_regions;
-	struct hfi_cmd_mem_region_info region_info[1];
+	struct hfi_cmd_mem_region_info region_info[];
 } __packed;
 
 /* end of sys command packet types */

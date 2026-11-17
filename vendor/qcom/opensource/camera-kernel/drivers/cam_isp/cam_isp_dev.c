@@ -208,6 +208,7 @@ static int cam_isp_dev_component_bind(struct device *dev,
 	if (!g_isp_dev.ctx) {
 		CAM_ERR(CAM_ISP,
 			"Mem Allocation failed for ISP base context");
+		rc = -ENOMEM;
 		goto unregister;
 	}
 
@@ -217,6 +218,7 @@ static int cam_isp_dev_component_bind(struct device *dev,
 	if (!g_isp_dev.ctx_isp) {
 		CAM_ERR(CAM_ISP,
 			"Mem Allocation failed for Isp private context");
+		rc = -ENOMEM;
 		kfree(g_isp_dev.ctx);
 		g_isp_dev.ctx = NULL;
 		goto unregister;
@@ -274,7 +276,7 @@ free_mem:
 	g_isp_dev.ctx_isp = NULL;
 
 unregister:
-	rc = cam_subdev_remove(&g_isp_dev.sd);
+	cam_subdev_remove(&g_isp_dev.sd);
 err:
 	return rc;
 }
@@ -316,10 +318,9 @@ const static struct component_ops cam_isp_dev_component_ops = {
 	.unbind = cam_isp_dev_component_unbind,
 };
 
-static int cam_isp_dev_remove(struct platform_device *pdev)
+static void cam_isp_dev_remove(struct platform_device *pdev)
 {
 	component_del(&pdev->dev, &cam_isp_dev_component_ops);
-	return 0;
 }
 
 static int cam_isp_dev_probe(struct platform_device *pdev)

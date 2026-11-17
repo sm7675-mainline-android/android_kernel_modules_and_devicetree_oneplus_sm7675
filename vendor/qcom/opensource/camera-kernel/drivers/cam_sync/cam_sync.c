@@ -1239,6 +1239,16 @@ free_mem:
 	return rc;
 }
 
+static struct cam_generic_fence_config *cam_generic_fence_get_config(
+	struct cam_generic_fence_input_info *fence_input_info, uint32_t index)
+{
+	struct cam_generic_fence_config *configs;
+
+	configs = (void *)((uint8_t *)fence_input_info +
+		offsetof(struct cam_generic_fence_input_info, fence_cfg));
+	return &configs[index];
+}
+
 static void cam_generic_fence_free_input_info_util(
 	struct cam_generic_fence_input_info **fence_input_info)
 {
@@ -1264,7 +1274,7 @@ static int cam_generic_fence_handle_dma_create(
 	}
 
 	for (i = 0; i < fence_input_info->num_fences_requested; i++) {
-		fence_cfg = &fence_input_info->fence_cfg[i];
+		fence_cfg = cam_generic_fence_get_config(fence_input_info, i);
 		fence_input_info->num_fences_processed++;
 		fence_cfg->reason_code = 0;
 
@@ -1316,7 +1326,7 @@ static int cam_generic_fence_handle_dma_release(
 	}
 
 	for (i = 0; i < fence_input_info->num_fences_requested; i++) {
-		fence_cfg = &fence_input_info->fence_cfg[i];
+		fence_cfg = cam_generic_fence_get_config(fence_input_info, i);
 		fence_input_info->num_fences_processed++;
 		fence_cfg->reason_code = 0;
 
@@ -1374,7 +1384,7 @@ static int cam_generic_fence_handle_dma_import(
 	}
 
 	for (i = 0; i < fence_input_info->num_fences_requested; i++) {
-		fence_cfg = &fence_input_info->fence_cfg[i];
+		fence_cfg = cam_generic_fence_get_config(fence_input_info, i);
 		fence_input_info->num_fences_processed++;
 		fence_cfg->reason_code = 0;
 
@@ -1655,7 +1665,7 @@ static int cam_generic_fence_handle_synx_create(
 	}
 
 	for (i = 0; i < fence_input_info->num_fences_requested; i++) {
-		fence_cfg = &fence_input_info->fence_cfg[i];
+		fence_cfg = cam_generic_fence_get_config(fence_input_info, i);
 		fence_input_info->num_fences_processed++;
 		fence_cfg->reason_code = 0;
 		fence_flag = 0;
@@ -1711,7 +1721,7 @@ static int cam_generic_fence_handle_synx_release(
 	}
 
 	for (i = 0; i < fence_input_info->num_fences_requested; i++) {
-		fence_cfg = &fence_input_info->fence_cfg[i];
+		fence_cfg = cam_generic_fence_get_config(fence_input_info, i);
 		fence_input_info->num_fences_processed++;
 		fence_cfg->reason_code = 0;
 
@@ -1805,7 +1815,7 @@ static int cam_generic_fence_handle_synx_import(
 	}
 
 	for (i = 0; i < fence_input_info->num_fences_requested; i++) {
-		fence_cfg = &fence_input_info->fence_cfg[i];
+		fence_cfg = cam_generic_fence_get_config(fence_input_info, i);
 		fence_input_info->num_fences_processed++;
 		fence_cfg->reason_code = 0;
 		is_sync_obj_signaled = false;
@@ -1989,7 +1999,7 @@ static int cam_generic_fence_handle_sync_create(
 	}
 
 	for (i = 0; i < fence_input_info->num_fences_requested; i++) {
-		fence_cfg = &fence_input_info->fence_cfg[i];
+		fence_cfg = cam_generic_fence_get_config(fence_input_info, i);
 		fence_input_info->num_fences_processed++;
 		fence_cfg->reason_code = 0;
 
@@ -2197,7 +2207,7 @@ static int cam_generic_fence_handle_sync_release(
 	}
 
 	for (i = 0; i < fence_input_info->num_fences_requested; i++) {
-		fence_cfg = &fence_input_info->fence_cfg[i];
+		fence_cfg = cam_generic_fence_get_config(fence_input_info, i);
 		fence_input_info->num_fences_processed++;
 		/* Reset fields */
 		fence_cfg->reason_code = 0;
@@ -3016,10 +3026,9 @@ static int cam_sync_probe(struct platform_device *pdev)
 	return rc;
 }
 
-static int cam_sync_remove(struct platform_device *pdev)
+static void cam_sync_remove(struct platform_device *pdev)
 {
 	component_del(&pdev->dev, &cam_sync_component_ops);
-	return 0;
 }
 
 static const struct of_device_id cam_sync_dt_match[] = {

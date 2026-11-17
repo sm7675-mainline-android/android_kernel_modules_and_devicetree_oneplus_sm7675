@@ -192,7 +192,7 @@ struct cam_isp_clock_config_internal {
 	uint64_t                       num_rdi;
 	uint64_t                       left_pix_hz;
 	uint64_t                       right_pix_hz;
-	uint64_t                       rdi_hz[CAM_IFE_RDI_NUM_MAX];
+	uint64_t                       rdi_hz[CAM_SFE_RDI_NUM_MAX];
 };
 
 /**

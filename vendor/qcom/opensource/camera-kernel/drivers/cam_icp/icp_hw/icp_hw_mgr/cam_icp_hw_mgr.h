@@ -498,6 +498,8 @@ struct cam_icp_hw_mgr {
 	u64 icp_dbg_lvl;
 	u64 icp_fw_dump_lvl;
 	u32 icp_fw_ramdump_lvl;
+	u64 dmi_timeout_count;
+	unsigned long dmi_diag_next;
 	atomic_t recovery;
 	uint64_t icp_svs_clk;
 	atomic_t frame_in_process;

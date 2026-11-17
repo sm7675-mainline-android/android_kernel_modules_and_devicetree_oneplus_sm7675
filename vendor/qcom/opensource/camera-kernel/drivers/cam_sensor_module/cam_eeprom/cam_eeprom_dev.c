@@ -332,14 +332,12 @@ const static struct component_ops cam_eeprom_i2c_component_ops = {
 	.unbind = cam_eeprom_i2c_component_unbind,
 };
 
-static int cam_eeprom_i2c_driver_probe(struct i2c_client *client,
-	const struct i2c_device_id *id)
+static int cam_eeprom_i2c_driver_probe(struct i2c_client *client)
 {
 	int rc = 0;
 
-	if (client == NULL || id == NULL) {
-		CAM_ERR(CAM_EEPROM, "Invalid Args client: %pK id: %pK",
-			client, id);
+	if (client == NULL) {
+		CAM_ERR(CAM_EEPROM, "Invalid Args client: %pK", client);
 		return -EINVAL;
 	}
 
@@ -611,10 +609,9 @@ static int32_t cam_eeprom_platform_driver_probe(
 	return rc;
 }
 
-static int cam_eeprom_platform_driver_remove(struct platform_device *pdev)
+static void cam_eeprom_platform_driver_remove(struct platform_device *pdev)
 {
 	component_del(&pdev->dev, &cam_eeprom_component_ops);
-	return 0;
 }
 
 static const struct of_device_id cam_eeprom_dt_match[] = {

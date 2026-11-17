@@ -1733,7 +1733,7 @@ int cam_smmu_alloc_firmware(int32_t smmu_hdl,
 		firmware_start,
 		(phys_addr_t) icp_fw.fw_hdl,
 		firmware_len,
-		IOMMU_READ|IOMMU_WRITE|IOMMU_PRIV);
+		IOMMU_READ|IOMMU_WRITE|IOMMU_PRIV, GFP_KERNEL);
 
 	if (rc) {
 		CAM_ERR(CAM_SMMU, "Failed to map FW into IOMMU");
@@ -2027,7 +2027,7 @@ int cam_smmu_map_phy_mem_region(int32_t smmu_hdl,
 	 * But on chipsets which use dma-coherent - all the buffers that are
 	 * being mapped to this CB must be CACHED
 	 */
-	rc = iommu_map(domain, region_start, region_info->phy_addr, region_len, prot);
+	rc = iommu_map(domain, region_start, region_info->phy_addr, region_len, prot, GFP_KERNEL);
 	if (rc) {
 		CAM_ERR(CAM_SMMU, "Failed to map region = %u into IOMMU cb = %s",
 			region_id, cb_info->name[0]);
@@ -2353,7 +2353,7 @@ int cam_smmu_reserve_buf_region(enum cam_smmu_region_id region,
 	struct cam_smmu_subregion_info *subregion_info = NULL;
 	bool *is_buf_allocated;
 	bool region_supported;
-	size_t size = 0;
+	ssize_t size = 0;
 	int idx, rc = 0, multi_client_device_idx, prot, nested_reg_idx;
 
 	idx = GET_SMMU_TABLE_IDX(smmu_hdl);
@@ -2439,6 +2439,10 @@ int cam_smmu_reserve_buf_region(enum cam_smmu_region_id region,
 			"Error: dma get buf failed. rc = %d", rc);
 		goto err_out;
 	}
+	if (PAGE_ALIGN(buf->size) > region_info->iova_len) {
+		rc = -E2BIG;
+		goto err_put;
+	}
 
 	CAM_DBG(CAM_SMMU, "Map region=%d iova=0x%x len=0x%x",
 		region, region_info->iova_start, region_info->iova_len);
@@ -2468,15 +2472,21 @@ int cam_smmu_reserve_buf_region(enum cam_smmu_region_id region,
 		region_info->iova_start,
 		buf_info->table->sgl,
 		buf_info->table->orig_nents,
-		prot);
+		prot, GFP_KERNEL);
+	if (size <= 0) {
+		rc = size ? (int)size : -ENOMEM;
+		goto err_unmap_sg;
+	}
 	if (region_info->iova_len < size) {
 		CAM_ERR(CAM_SMMU,
 			"IOMMU mapping failed for size=%zu available iova_len=%zu",
 			size, region_info->iova_len);
 		rc = -EINVAL;
+		iommu_unmap(cb_info->domain, region_info->iova_start, size);
 		goto err_unmap_sg;
 	}
 
+	buf_info->mapped_len = size;
 	*iova = (uint32_t)region_info->iova_start;
 	/* Assign size mapped */
 	*request_len = size;
@@ -2493,7 +2503,7 @@ err_detach:
 	dma_buf_detach(buf_info->buf,
 		buf_info->attach);
 err_put:
-	dma_buf_put(buf_info->buf);
+	dma_buf_put(buf);
 err_out:
 	mutex_unlock(&cb_info->lock);
 	return rc;
@@ -2587,16 +2597,17 @@ int cam_smmu_release_buf_region(enum cam_smmu_region_id region,
 
 	size = iommu_unmap(cb_info->domain,
 		region_info->iova_start,
-		region_info->iova_len);
-	if (size != region_info->iova_len) {
+		buf_info->mapped_len);
+	if (size != buf_info->mapped_len) {
 		CAM_ERR(CAM_SMMU, "Failed: Unmapped = %zu, requested = %zu",
 			size,
-			region_info->iova_len);
+			buf_info->mapped_len);
 	}
 
 	dma_buf_unmap_attachment(buf_info->attach,
 		buf_info->table, DMA_BIDIRECTIONAL);
 	dma_buf_detach(buf_info->buf, buf_info->attach);
+	memset(buf_info, 0, sizeof(*buf_info));
 	*is_buf_allocated = false;
 	mutex_unlock(&cb_info->lock);
 
@@ -2652,7 +2663,7 @@ static int cam_smmu_map_buffer_validate(struct dma_buf *buf,
 	struct dma_buf_attachment *attach = NULL;
 	struct sg_table *table = NULL;
 	struct iommu_domain *domain;
-	size_t size = 0;
+	ssize_t size = 0;
 	unsigned long iova = 0;
 	int rc = 0;
 	struct timespec64 ts1, ts2;
@@ -2711,15 +2722,17 @@ static int cam_smmu_map_buffer_validate(struct dma_buf *buf,
 			prot |= IOMMU_CACHE;
 
 		size = iommu_map_sg(domain, iova, table->sgl, table->orig_nents,
-				prot);
+				prot, GFP_KERNEL);
 
-		if (size < 0) {
+		if (size <= 0) {
+			int map_rc = size ? (int)size : -ENOMEM;
+
 			CAM_ERR(CAM_SMMU, "IOMMU mapping failed");
 			rc = cam_smmu_free_iova(iova,
-				size, iommu_cb_set.cb_info[idx].handle);
+				*len_ptr, iommu_cb_set.cb_info[idx].handle);
 			if (rc)
 				CAM_ERR(CAM_SMMU, "IOVA free failed");
-			rc = -ENOMEM;
+			rc = map_rc;
 			goto err_unmap_sg;
 		} else {
 			CAM_DBG(CAM_SMMU,
@@ -3288,7 +3301,7 @@ static int cam_smmu_alloc_scratch_buffer_add_to_list(int idx,
 		iova,
 		table->sgl,
 		table->nents,
-		iommu_dir) != virt_len) {
+		iommu_dir, GFP_KERNEL) != virt_len) {
 		CAM_ERR(CAM_SMMU, "iommu_map_sg() failed");
 		goto err_iommu_map;
 	}
@@ -5731,7 +5744,7 @@ static int cam_smmu_probe(struct platform_device *pdev)
 	return rc;
 }
 
-static int cam_smmu_remove(struct platform_device *pdev)
+static void cam_smmu_remove(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 
@@ -5748,10 +5761,9 @@ static int cam_smmu_remove(struct platform_device *pdev)
 		component_del(&pdev->dev, &cam_smmu_fw_dev_component_ops);
 	} else {
 		CAM_ERR(CAM_SMMU, "Unrecognized child device: %s", pdev->name);
-		return -ENODEV;
+		return;
 	}
 
-	return 0;
 }
 
 struct platform_driver cam_smmu_driver = {

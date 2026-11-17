@@ -3788,14 +3788,16 @@ static int cam_cpas_deactivate_cache(
 	return rc;
 }
 
-#if IS_ENABLED(CONFIG_SPECTRA_LLCC_STALING)
 static int cam_cpas_configure_staling_cache(
 	struct cam_hw_info *cpas_hw,
 	struct cam_sys_cache_info *cache_info,
 	struct cam_sys_cache_local_info *sys_cache_info)
 {
 	int rc = 0;
-	struct llcc_staling_mode_params staling_params;
+	struct llcc_staling_mode_params staling_params = {0};
+
+	if (sys_cache_info->staling_distance > U8_MAX)
+		return -EINVAL;
 
 	mutex_lock(&cpas_hw->hw_mutex);
 	switch (sys_cache_info->mode) {
@@ -3810,7 +3812,8 @@ static int cam_cpas_configure_staling_cache(
 	default:
 		CAM_ERR(CAM_CPAS, "CPAS LLCC sys cache mode is not valid =%d"
 				, sys_cache_info->mode);
-		break;
+		rc = -EINVAL;
+		goto unlock;
 	}
 
 	switch (sys_cache_info->op_type) {
@@ -3821,10 +3824,11 @@ static int cam_cpas_configure_staling_cache(
 	default:
 		CAM_ERR(CAM_CPAS, "CPAS LLCC sys cache op_type is not valid =%d"
 				, sys_cache_info->op_type);
-		break;
+		rc = -EINVAL;
+		goto unlock;
 	}
 	staling_params.notify_params.staling_distance
-		= cache_info->staling_distance;
+		= sys_cache_info->staling_distance;
 	rc = llcc_configure_staling_mode(cache_info->slic_desc,
 			&staling_params);
 	if (!rc) {
@@ -3839,9 +3843,10 @@ static int cam_cpas_configure_staling_cache(
 			cache_info->name);
 	}
 
+unlock:
 	mutex_unlock(&cpas_hw->hw_mutex);
 	CAM_DBG(CAM_CPAS,
-		"llcc notif cache name:%s staling_distance %d cache mode :%d cache op_type :%s",
+		"llcc notif cache name:%s staling_distance %d cache mode :%d cache op_type :%u",
 		cache_info->name, cache_info->staling_distance,
 		cache_info->mode, cache_info->op_type);
 	return rc;
@@ -3867,7 +3872,6 @@ static int cam_cpas_notif_stalling_inc_cache(
 		cache_info->name);
 	return rc;
 }
-#endif
 
 static inline int cam_cpas_validate_cache_type(
 	uint32_t num_caches, enum cam_sys_cache_config_types type)
@@ -3949,7 +3953,6 @@ end:
 	return rc;
 }
 
-#if IS_ENABLED(CONFIG_SPECTRA_LLCC_STALING)
 static int cam_cpas_configure_staling_cache_slice(
 	struct cam_hw_info *cpas_hw,
 	struct cam_sys_cache_local_info sys_cache_info)
@@ -4001,22 +4004,6 @@ static int cam_cpas_notif_stalling_inc_cache_slice(
 end:
 	return rc;
 }
-
-#else
-static int cam_cpas_configure_staling_cache_slice(
-	struct cam_hw_info *cpas_hw,
-	struct cam_sys_cache_local_info sys_cache_info)
-{
-	return -EOPNOTSUPP;
-}
-
-static int cam_cpas_notif_stalling_inc_cache_slice(
-	struct cam_hw_info *cpas_hw,
-	enum cam_sys_cache_config_types type)
-{
-	return -EOPNOTSUPP;
-}
-#endif
 
 static int cam_cpas_hw_csid_input_core_info_update(struct cam_hw_info *cpas_hw,
 	int csid_idx, int sfe_idx, bool set_port)

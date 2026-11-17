@@ -27,7 +27,7 @@ const struct device *cam_cpas_get_rsc_dev_for_drv(uint32_t index)
 	const struct device *rsc_dev;
 
 	rsc_dev = rpmh_get_device(CAM_RSC_DRV_IDENTIFIER, index);
-	if (!rsc_dev) {
+	if (IS_ERR_OR_NULL(rsc_dev)) {
 		CAM_ERR(CAM_CPAS, "Invalid dev for index: %u", index);
 		return NULL;
 	}

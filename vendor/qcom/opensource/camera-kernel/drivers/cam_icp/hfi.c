@@ -7,6 +7,7 @@
 #include <linux/io.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
+#include <linux/overflow.h>
 #include <linux/random.h>
 #include <asm/errno.h>
 #include <linux/timer.h>
@@ -418,8 +419,7 @@ int hfi_cmd_ubwc_config(int client_handle, uint32_t *ubwc_cfg)
 	uint32_t size = 0;
 	int rc;
 
-	size = sizeof(struct hfi_cmd_prop) +
-		sizeof(struct hfi_cmd_ubwc_cfg);
+	size = struct_size(dbg_prop, prop_data, 3);
 
 	rc = hfi_get_client_info(client_handle, &hfi);
 	if (rc) {
@@ -444,10 +444,10 @@ int hfi_cmd_ubwc_config(int client_handle, uint32_t *ubwc_cfg)
 	dbg_prop->prop_data[1] = ubwc_cfg[0];
 	dbg_prop->prop_data[2] = ubwc_cfg[1];
 
-	hfi_write_cmd(client_handle, prop);
+	rc = hfi_write_cmd(client_handle, prop);
 	kfree(prop);
 
-	return 0;
+	return rc;
 }
 
 int hfi_cmd_ubwc_config_ext(int client_handle, uint32_t *ubwc_ipe_cfg,
@@ -466,8 +466,7 @@ int hfi_cmd_ubwc_config_ext(int client_handle, uint32_t *ubwc_ipe_cfg,
 		return rc;
 	}
 
-	size = sizeof(struct hfi_cmd_prop) +
-		sizeof(struct hfi_cmd_ubwc_cfg_ext);
+	size = struct_size(dbg_prop, prop_data, 7);
 
 	CAM_DBG(CAM_HFI,
 		"[%s] hfi hdl: %d size of ubwc %u, ubwc_ipe_cfg[rd-0x%x,wr-0x%x] ubwc_bps_cfg[rd-0x%x,wr-0x%x] ubwc_ofe_cfg[rd-0x%x,wr-0x%x]",
@@ -490,10 +489,10 @@ int hfi_cmd_ubwc_config_ext(int client_handle, uint32_t *ubwc_ipe_cfg,
 	dbg_prop->prop_data[4] = ubwc_ipe_cfg[1];
 	dbg_prop->prop_data[5] = ubwc_ofe_cfg[0];
 	dbg_prop->prop_data[6] = ubwc_ofe_cfg[1];
-	hfi_write_cmd(client_handle, prop);
+	rc = hfi_write_cmd(client_handle, prop);
 	kfree(prop);
 
-	return 0;
+	return rc;
 }
 
 int hfi_set_debug_level(int client_handle, u64 icp_dbg_type, uint32_t lvl)
@@ -526,8 +525,7 @@ int hfi_set_debug_level(int client_handle, u64 icp_dbg_type, uint32_t lvl)
 	if (hfi)
 		hfi->dbg_lvl = lvl;
 
-	size = sizeof(struct hfi_cmd_prop) +
-		sizeof(struct hfi_debug);
+	size = struct_size(dbg_prop, prop_data, 3);
 
 	prop = kzalloc(size, GFP_KERNEL);
 	if (!prop)
@@ -540,11 +538,11 @@ int hfi_set_debug_level(int client_handle, u64 icp_dbg_type, uint32_t lvl)
 	dbg_prop->prop_data[0] = HFI_PROP_SYS_DEBUG_CFG;
 	dbg_prop->prop_data[1] = lvl;
 	dbg_prop->prop_data[2] = icp_dbg_type;
-	hfi_write_cmd(client_handle, prop);
+	rc = hfi_write_cmd(client_handle, prop);
 
 	kfree(prop);
 
-	return 0;
+	return rc;
 }
 
 int hfi_set_fw_dump_levels(int client_handle, uint32_t hang_dump_lvl,
@@ -566,7 +564,7 @@ int hfi_set_fw_dump_levels(int client_handle, uint32_t hang_dump_lvl,
 	CAM_DBG(CAM_HFI, "[%s] hfi hdl: %d fw dump ENTER",
 		hfi->client_name, client_handle);
 
-	size = sizeof(struct hfi_cmd_prop) + sizeof(uint32_t);
+	size = struct_size(fw_dump_level_switch_prop, prop_data, 2);
 	prop = kzalloc(size, GFP_KERNEL);
 	if (!prop)
 		return -ENOMEM;
@@ -579,21 +577,24 @@ int hfi_set_fw_dump_levels(int client_handle, uint32_t hang_dump_lvl,
 	fw_dump_level_switch_prop->prop_data[1] = hang_dump_lvl;
 
 	/* Write hang dump level */
-	hfi_write_cmd(client_handle, prop);
+	rc = hfi_write_cmd(client_handle, prop);
+	if (rc)
+		goto free_prop;
 
 	/* Update and write ramdump level */
 	fw_dump_level_switch_prop->prop_data[0] = HFI_PROP_SYS_ICP_RAMDUMP_MODE;
 	fw_dump_level_switch_prop->prop_data[1] = ram_dump_lvl;
 
-	hfi_write_cmd(client_handle, prop);
+	rc = hfi_write_cmd(client_handle, prop);
 	CAM_DBG(CAM_HFI,
 		"[%s] hfi hdl: %d prop->size = %d prop->pkt_type = %d prop->num_prop = %d hang_dump_lvl = %u ram_dump_lvl = %u",
 		hfi->client_name, client_handle, fw_dump_level_switch_prop->size,
 		fw_dump_level_switch_prop->pkt_type, fw_dump_level_switch_prop->num_prop,
 		hang_dump_lvl, ram_dump_lvl);
 
+free_prop:
 	kfree(prop);
-	return 0;
+	return rc;
 }
 
 int hfi_send_freq_info(int client_handle, int32_t freq)
@@ -614,7 +615,7 @@ int hfi_send_freq_info(int client_handle, int32_t freq)
 	if (!(hfi->dbg_lvl & HFI_DEBUG_MSG_PERF))
 		return -EINVAL;
 
-	size = sizeof(struct hfi_cmd_prop) + sizeof(freq);
+	size = struct_size(dbg_prop, prop_data, 2);
 	prop = kzalloc(size, GFP_KERNEL);
 	if (!prop)
 		return -ENOMEM;
@@ -643,9 +644,9 @@ int hfi_send_freq_info(int client_handle, int32_t freq)
 			 dbg_prop->prop_data[1],
 			 hfi->dbg_lvl);
 
-	hfi_write_cmd(client_handle, prop);
+	rc = hfi_write_cmd(client_handle, prop);
 	kfree(prop);
-	return 0;
+	return rc;
 }
 
 int hfi_send_system_cmd(int client_handle, uint32_t type, uint64_t data, uint32_t size)
@@ -678,14 +679,14 @@ int hfi_send_system_cmd(int client_handle, uint32_t type, uint64_t data, uint32_
 	}
 		break;
 	case HFI_CMD_SYS_SET_PROPERTY: {
-		struct hfi_cmd_prop prop;
+		DEFINE_RAW_FLEX(struct hfi_cmd_prop, prop, prop_data, 1);
 
 		if ((uint32_t)data == (uint32_t)HFI_PROP_SYS_DEBUG_CFG) {
-			prop.size = sizeof(struct hfi_cmd_prop);
-			prop.pkt_type = type;
-			prop.num_prop = 1;
-			prop.prop_data[0] = HFI_PROP_SYS_DEBUG_CFG;
-			rc = hfi_write_cmd(client_handle, &prop);
+			prop->size = struct_size(prop, prop_data, 1);
+			prop->pkt_type = type;
+			prop->num_prop = 1;
+			prop->prop_data[0] = HFI_PROP_SYS_DEBUG_CFG;
+			rc = hfi_write_cmd(client_handle, prop);
 		}
 	}
 		break;

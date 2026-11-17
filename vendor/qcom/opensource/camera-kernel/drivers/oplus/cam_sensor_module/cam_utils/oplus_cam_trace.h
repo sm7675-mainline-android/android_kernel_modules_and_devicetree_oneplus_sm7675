@@ -22,7 +22,7 @@ TRACE_EVENT(cam_tracing_mark_write,
 		__string(string1, string1)
 	),
 	TP_fast_assign(
-		__assign_str(string1, string1);
+		__assign_str(string1);
 	),
 	TP_printk(
 		"%s",

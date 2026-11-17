@@ -269,9 +269,9 @@ static void __cam_print_log(int type, const char *fmt, ...)
 	va_start(args, fmt);
 	va_copy(args1, args);
 	va_copy(args2, args1);
-	if ((type & CAM_PRINT_LOG) && (debug_type != 1))
+	if (type & CAM_PRINT_LOG)
 		vprintk(fmt, args1);
-	if ((type & CAM_PRINT_TRACE) && (debug_type != 0)) {
+	if (type & CAM_PRINT_TRACE) {
 		/* skip the first character which is used by printk to identify the log level */
 		trace_cam_log_debug(fmt + sizeof(KERN_INFO) - 1, &args2);
 	}
@@ -284,9 +284,14 @@ void cam_print_log(int type, int module, int tag, const char *func,
 	int line, const char *fmt, ...)
 {
 	char buf[CAM_LOG_BUF_LEN] = {0,};
+	unsigned int log_type = READ_ONCE(debug_type);
 	va_list args;
 
-	if (!type)
+	if (log_type == 1)
+		type &= ~CAM_PRINT_LOG;
+	if (!log_type || !trace_cam_log_debug_enabled())
+		type &= ~CAM_PRINT_TRACE;
+	if (!(type & CAM_PRINT_BOTH))
 		return;
 
 	va_start(args, fmt);
