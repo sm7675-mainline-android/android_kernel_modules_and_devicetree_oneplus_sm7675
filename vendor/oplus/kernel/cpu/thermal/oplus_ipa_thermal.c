@@ -21,6 +21,26 @@
 #include "oplus_ipa_thermal.h"
 #include "horae_shell_temp.h"
 
+/*
+ * Cooling instances are linked to each trip descriptor, and
+ * thermal_instance::trip points to the trip instead of its index.
+ */
+static inline struct list_head *
+oplus_ipa_trip_instances(struct thermal_zone_device *tz, int trip)
+{
+	if (!tz || trip < 0 || trip >= tz->num_trips)
+		return NULL;
+	return &tz->trips[trip].thermal_instances;
+}
+
+static inline bool
+oplus_ipa_instance_on_trip(struct thermal_zone_device *tz,
+			   struct thermal_instance *instance, int trip)
+{
+	return tz && instance && trip >= 0 && trip < tz->num_trips &&
+	       instance->trip == &tz->trips[trip].trip;
+}
+
 #define FRAC_BITS 10
 #define int_to_frac(x) ((x) << FRAC_BITS)
 #define frac_to_int(x) ((x) >> FRAC_BITS)
@@ -118,14 +138,7 @@ static void reset_ipa_trips(struct oplus_thermal_data *data)
 	params->trip_control_temp = INVALID_TRIP;
 
 	for (i = 0; i < tz->num_trips; i++) {
-		enum thermal_trip_type type;
-		int ret;
-
-		ret = tz->ops->get_trip_type(tz, i, &type);
-		if (ret) {
-			dev_warn(&tz->device, "Failed to get trip point %d type: %d\n", i, ret);
-			continue;
-		}
+		enum thermal_trip_type type = tz->trips[i].trip.type;
 
 		if (type == THERMAL_TRIP_PASSIVE && !found_first_passive) {
 			params->trip_switch_on = i;
@@ -159,9 +172,9 @@ static void allow_maximum_power(struct oplus_thermal_data *data)
 
 	mutex_unlock(&data->lock);
 	mutex_lock(&tz->lock);
-	list_for_each_entry(instance, &tz->thermal_instances, tz_node) {
-		if (instance->trip != control_temp ||
-		    (!cdev_is_power_actor(instance->cdev)))
+	list_for_each_entry(instance, oplus_ipa_trip_instances(tz, control_temp),
+			    trip_node) {
+		if (!cdev_is_power_actor(instance->cdev))
 			continue;
 		instance->target = 0;
 
@@ -389,9 +402,10 @@ static int oplus_ipa_controller(struct oplus_thermal_data *data, int control_tem
 
 	num_actors = 0;
 	total_weight = 0;
-	list_for_each_entry(instance, &tz->thermal_instances, tz_node) {
-		if ((instance->trip == trip_max_desired_temperature) &&
-		    cdev_is_power_actor(instance->cdev)) {
+	list_for_each_entry(instance,
+			    oplus_ipa_trip_instances(tz, trip_max_desired_temperature),
+			    trip_node) {
+		if (cdev_is_power_actor(instance->cdev)) {
 			num_actors++;
 			total_weight += instance->weight;
 		}
@@ -429,14 +443,13 @@ static int oplus_ipa_controller(struct oplus_thermal_data *data, int control_tem
 	total_req_power = 0;
 	max_allocatable_power = 0;
 
-	list_for_each_entry(instance, &tz->thermal_instances, tz_node) {
+	list_for_each_entry(instance,
+			    oplus_ipa_trip_instances(tz, trip_max_desired_temperature),
+			    trip_node) {
 		int weight;
 		struct thermal_cooling_device *cdev = instance->cdev;
 		struct cpufreq_cooling_device *cpufreq_cdev = instance->cdev->devdata;
 		int level;
-
-		if (instance->trip != trip_max_desired_temperature)
-			continue;
 
 		if (!cdev_is_power_actor(cdev))
 			continue;
@@ -454,7 +467,7 @@ static int oplus_ipa_controller(struct oplus_thermal_data *data, int control_tem
 
 		if (use_thermalcontrol_limit && data->ipa_param->clt_state_limit[i] > 0 && data->ipa_param->sustainable_power < CPU_POWER_MAX) {
 			for(level = cpufreq_cdev->max_level; level > 0; level--) {
-				if(data->ipa_param->clt_state_limit[i] >= cpufreq_cdev->em->table[level].frequency)
+				if(data->ipa_param->clt_state_limit[i] >= em_perf_state_from_pd(cpufreq_cdev->em)[level].frequency)
 					break;
 			}
 			if (cdev->ops->state2power(cdev, (cpufreq_cdev->max_level - level),
@@ -475,7 +488,7 @@ static int oplus_ipa_controller(struct oplus_thermal_data *data, int control_tem
 	}
 
 	power_range = pid_controller(data, control_temp, max_allocatable_power);
-	trace_android_vh_thermal_power_cap(&power_range);
+	/* The thermal power cap hook is unavailable on 6.18. */
 	divvy_up_power(weighted_req_power, max_power, num_actors,
 		       total_weighted_req_power, power_range, granted_power,
 		       extra_actor_power);
@@ -483,12 +496,12 @@ static int oplus_ipa_controller(struct oplus_thermal_data *data, int control_tem
 	total_granted_power = 0;
 	i = 0;
 	relarge_ganted_power = false;
-	list_for_each_entry(instance, &tz->thermal_instances, tz_node) {
+	list_for_each_entry(instance,
+			    oplus_ipa_trip_instances(tz, trip_max_desired_temperature),
+			    trip_node) {
 		struct cpufreq_cooling_device *cpufreq_cdev = instance->cdev->devdata;
 		struct cpufreq_policy *policy = cpufreq_cdev->policy;
 		u32 ncpus, last_load;
-		if (instance->trip != trip_max_desired_temperature)
-			continue;
 
 		if (!cdev_is_power_actor(instance->cdev))
 			continue;
@@ -610,8 +623,10 @@ static void oplus_ipa_thermal(struct oplus_thermal_data *data)
 
 	mutex_lock(&data->lock);
 
-	ret = tz->ops->get_trip_temp(tz, params->trip_switch_on,
-				     &switch_on_temp);
+	ret = (params->trip_switch_on < 0 ||
+	       params->trip_switch_on >= tz->num_trips) ? -EINVAL : 0;
+	if (!ret)
+		switch_on_temp = tz->trips[params->trip_switch_on].trip.temperature;
 
 	if (!ret && tz->temperature < switch_on_temp) {
 		reset_ipa_params(data);
@@ -622,8 +637,10 @@ static void oplus_ipa_thermal(struct oplus_thermal_data *data)
 
 	params->switched_on = true;
 
-	ret = tz->ops->get_trip_temp(tz, params->trip_control_temp,
-				     &control_temp);
+	ret = (params->trip_control_temp < 0 ||
+	       params->trip_control_temp >= tz->num_trips) ? -EINVAL : 0;
+	if (!ret)
+		control_temp = tz->trips[params->trip_control_temp].trip.temperature;
 	if (ret) {
 		pr_warn("Failed to get the maximum desired temperature: %d\n",
 			ret);
