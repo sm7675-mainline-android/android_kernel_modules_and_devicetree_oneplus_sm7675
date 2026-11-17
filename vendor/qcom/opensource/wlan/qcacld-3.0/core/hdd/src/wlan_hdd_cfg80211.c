@@ -30406,40 +30406,210 @@ QDF_STATUS hdd_mlo_dev_t2lm_notify_link_update(struct wlan_objmgr_vdev *vdev,
 }
 #endif
 
+static int wlan_hdd_cfg80211_get_station_6_18(struct wiphy *wiphy,
+		struct wireless_dev *wdev, const u8 *mac,
+		struct station_info *sinfo)
+{
+	if (!wdev->netdev)
+		return -EOPNOTSUPP;
+
+	return wlan_hdd_cfg80211_get_station(wiphy, wdev->netdev, mac, sinfo);
+}
+
+static int wlan_hdd_cfg80211_dump_station_6_18(struct wiphy *wiphy,
+		struct wireless_dev *wdev, int idx, u8 *mac,
+		struct station_info *sinfo)
+{
+	if (!wdev->netdev)
+		return -EOPNOTSUPP;
+
+	return wlan_hdd_cfg80211_dump_station(wiphy, wdev->netdev, idx, mac, sinfo);
+}
+
+static int wlan_hdd_cfg80211_add_station_6_18(struct wiphy *wiphy,
+		struct wireless_dev *wdev, const u8 *mac,
+		struct station_parameters *params)
+{
+	if (!wdev->netdev)
+		return -EOPNOTSUPP;
+
+	return wlan_hdd_cfg80211_add_station(wiphy, wdev->netdev, mac, params);
+}
+
+static int wlan_hdd_cfg80211_del_station_6_18(struct wiphy *wiphy,
+		struct wireless_dev *wdev, struct station_del_parameters *params)
+{
+	if (!wdev->netdev)
+		return -EOPNOTSUPP;
+
+	return wlan_hdd_cfg80211_del_station(wiphy, wdev->netdev, params);
+}
+
+static int wlan_hdd_cfg80211_change_station_6_18(struct wiphy *wiphy,
+		struct wireless_dev *wdev, const u8 *mac,
+		struct station_parameters *params)
+{
+	if (!wdev->netdev)
+		return -EOPNOTSUPP;
+
+	return wlan_hdd_change_station(wiphy, wdev->netdev, mac, params);
+}
+
+static int wlan_hdd_cfg80211_add_key_6_18(struct wiphy *wiphy,
+		struct wireless_dev *wdev, int link_id, u8 key_index,
+		bool pairwise, const u8 *mac, struct key_params *params)
+{
+	if (!wdev->netdev)
+		return -EOPNOTSUPP;
+
+	return wlan_hdd_cfg80211_add_key(wiphy, wdev->netdev, link_id, key_index,
+				       pairwise, mac, params);
+}
+
+static int wlan_hdd_cfg80211_get_key_6_18(struct wiphy *wiphy,
+		struct wireless_dev *wdev, int link_id, u8 key_index,
+		bool pairwise, const u8 *mac, void *cookie,
+		void (*callback)(void *cookie, struct key_params *))
+{
+	if (!wdev->netdev)
+		return -EOPNOTSUPP;
+
+	return wlan_hdd_cfg80211_get_key(wiphy, wdev->netdev, link_id, key_index,
+				       pairwise, mac, cookie, callback);
+}
+
+static int wlan_hdd_cfg80211_del_key_6_18(struct wiphy *wiphy,
+		struct wireless_dev *wdev, int link_id, u8 key_index,
+		bool pairwise, const u8 *mac)
+{
+	if (!wdev->netdev)
+		return -EOPNOTSUPP;
+
+	return wlan_hdd_cfg80211_del_key(wiphy, wdev->netdev, link_id, key_index,
+				       pairwise, mac);
+}
+
+static int wlan_hdd_cfg80211_set_default_mgmt_key_6_18(struct wiphy *wiphy,
+		struct wireless_dev *wdev, int link_id, u8 key_index)
+{
+	if (!wdev->netdev)
+		return -EOPNOTSUPP;
+
+	return wlan_hdd_set_default_mgmt_key(wiphy, wdev->netdev, link_id,
+					  key_index);
+}
+
+#if defined(CFG80211_BIGTK_CONFIGURATION_SUPPORT) || \
+	(LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0))
+static int wlan_hdd_cfg80211_set_default_beacon_key_6_18(struct wiphy *wiphy,
+		struct wireless_dev *wdev, int link_id, u8 key_index)
+{
+	if (!wdev->netdev)
+		return -EOPNOTSUPP;
+
+	return wlan_hdd_cfg80211_set_default_beacon_key(wiphy, wdev->netdev,
+						     link_id, key_index);
+}
+#endif
+
+static int wlan_hdd_cfg80211_change_beacon_6_18(struct wiphy *wiphy,
+		struct net_device *dev, struct cfg80211_ap_update *info)
+{
+	return wlan_hdd_cfg80211_change_beacon(wiphy, dev, &info->beacon);
+}
+
+static int wlan_hdd_cfg80211_set_wiphy_params_6_18(struct wiphy *wiphy,
+		int radio_idx, u32 changed)
+{
+	if (radio_idx != -1)
+		return -EOPNOTSUPP;
+
+	return wlan_hdd_cfg80211_set_wiphy_params(wiphy, changed);
+}
+
+static int wlan_hdd_cfg80211_set_tx_power_6_18(struct wiphy *wiphy,
+		struct wireless_dev *wdev, int radio_idx,
+		enum nl80211_tx_power_setting type, int mbm)
+{
+	if (radio_idx != -1)
+		return -EOPNOTSUPP;
+
+	return wlan_hdd_cfg80211_set_txpower(wiphy, wdev, type, mbm);
+}
+
+static int wlan_hdd_cfg80211_remain_on_channel_6_18(struct wiphy *wiphy,
+		struct wireless_dev *wdev, struct ieee80211_channel *chan,
+		unsigned int duration, u64 *cookie, const u8 *rx_addr)
+{
+	if (rx_addr)
+		return -EOPNOTSUPP;
+
+	return wlan_hdd_cfg80211_remain_on_channel(wiphy, wdev, chan, duration,
+						cookie);
+}
+
+#ifdef FEATURE_MONITOR_MODE_SUPPORT
+static int wlan_hdd_cfg80211_set_monitor_channel_6_18(struct wiphy *wiphy,
+		struct net_device *dev, struct cfg80211_chan_def *chandef)
+{
+	return wlan_hdd_cfg80211_set_mon_ch(wiphy, chandef);
+}
+#endif
+
+static int wlan_hdd_cfg80211_set_antenna_6_18(struct wiphy *wiphy,
+		int radio_idx, u32 tx_mask, u32 rx_mask)
+{
+	if (radio_idx != -1)
+		return -EOPNOTSUPP;
+
+	return wlan_hdd_cfg80211_set_chainmask(wiphy, tx_mask, rx_mask);
+}
+
+static int wlan_hdd_cfg80211_get_antenna_6_18(struct wiphy *wiphy,
+		int radio_idx, u32 *tx_mask, u32 *rx_mask)
+{
+	if (radio_idx != -1)
+		return -EOPNOTSUPP;
+
+	return wlan_hdd_cfg80211_get_chainmask(wiphy, tx_mask, rx_mask);
+}
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic error "-Wincompatible-pointer-types"
 static struct cfg80211_ops wlan_hdd_cfg80211_ops = {
 	.add_virtual_intf = wlan_hdd_add_virtual_intf,
 	.del_virtual_intf = wlan_hdd_del_virtual_intf,
 	.change_virtual_intf = wlan_hdd_cfg80211_change_iface,
-	.change_station = wlan_hdd_change_station,
+	.change_station = wlan_hdd_cfg80211_change_station_6_18,
 	.start_ap = wlan_hdd_cfg80211_start_ap,
-	.change_beacon = wlan_hdd_cfg80211_change_beacon,
+	.change_beacon = wlan_hdd_cfg80211_change_beacon_6_18,
 	.stop_ap = wlan_hdd_cfg80211_stop_ap,
 	.change_bss = wlan_hdd_cfg80211_change_bss,
-	.add_key = wlan_hdd_cfg80211_add_key,
-	.get_key = wlan_hdd_cfg80211_get_key,
-	.del_key = wlan_hdd_cfg80211_del_key,
+	.add_key = wlan_hdd_cfg80211_add_key_6_18,
+	.get_key = wlan_hdd_cfg80211_get_key_6_18,
+	.del_key = wlan_hdd_cfg80211_del_key_6_18,
 	.set_default_key = wlan_hdd_cfg80211_set_default_key,
 	.scan = wlan_hdd_cfg80211_scan,
 	.connect = wlan_hdd_cfg80211_connect,
 	.disconnect = wlan_hdd_cfg80211_disconnect,
-	.set_wiphy_params = wlan_hdd_cfg80211_set_wiphy_params,
-	.set_tx_power = wlan_hdd_cfg80211_set_txpower,
+	.set_wiphy_params = wlan_hdd_cfg80211_set_wiphy_params_6_18,
+	.set_tx_power = wlan_hdd_cfg80211_set_tx_power_6_18,
 	.get_tx_power = wlan_hdd_cfg80211_get_txpower,
-	.remain_on_channel = wlan_hdd_cfg80211_remain_on_channel,
+	.remain_on_channel = wlan_hdd_cfg80211_remain_on_channel_6_18,
 	.cancel_remain_on_channel = wlan_hdd_cfg80211_cancel_remain_on_channel,
 	.mgmt_tx = wlan_hdd_mgmt_tx,
 	.mgmt_tx_cancel_wait = wlan_hdd_cfg80211_mgmt_tx_cancel_wait,
-	.set_default_mgmt_key = wlan_hdd_set_default_mgmt_key,
+	.set_default_mgmt_key = wlan_hdd_cfg80211_set_default_mgmt_key_6_18,
 #if defined (CFG80211_BIGTK_CONFIGURATION_SUPPORT) || \
 	    (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 7, 0))
-	.set_default_beacon_key = wlan_hdd_cfg80211_set_default_beacon_key,
+	.set_default_beacon_key = wlan_hdd_cfg80211_set_default_beacon_key_6_18,
 #endif
 	.set_txq_params = wlan_hdd_set_txq_params,
-	.dump_station = wlan_hdd_cfg80211_dump_station,
-	.get_station = wlan_hdd_cfg80211_get_station,
+	.dump_station = wlan_hdd_cfg80211_dump_station_6_18,
+	.get_station = wlan_hdd_cfg80211_get_station_6_18,
 	.set_power_mgmt = wlan_hdd_cfg80211_set_power_mgmt,
-	.del_station = wlan_hdd_cfg80211_del_station,
-	.add_station = wlan_hdd_cfg80211_add_station,
+	.del_station = wlan_hdd_cfg80211_del_station_6_18,
+	.add_station = wlan_hdd_cfg80211_add_station_6_18,
 	.set_pmksa = wlan_hdd_cfg80211_set_pmksa,
 	.del_pmksa = wlan_hdd_cfg80211_del_pmksa,
 	.flush_pmksa = wlan_hdd_cfg80211_flush_pmksa,
@@ -30475,7 +30645,7 @@ static struct cfg80211_ops wlan_hdd_cfg80211_ops = {
 	.channel_switch = wlan_hdd_cfg80211_channel_switch,
 #endif
 #ifdef FEATURE_MONITOR_MODE_SUPPORT
-	.set_monitor_channel = wlan_hdd_cfg80211_set_mon_ch,
+	.set_monitor_channel = wlan_hdd_cfg80211_set_monitor_channel_6_18,
 #endif
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)) || \
 	defined(CFG80211_ABORT_SCAN)
@@ -30498,8 +30668,8 @@ static struct cfg80211_ops wlan_hdd_cfg80211_ops = {
 	.del_nan_func = wlan_hdd_cfg80211_del_nan_func,
 	.nan_change_conf = wlan_hdd_cfg80211_nan_change_conf,
 #endif
-	.set_antenna = wlan_hdd_cfg80211_set_chainmask,
-	.get_antenna = wlan_hdd_cfg80211_get_chainmask,
+	.set_antenna = wlan_hdd_cfg80211_set_antenna_6_18,
+	.get_antenna = wlan_hdd_cfg80211_get_antenna_6_18,
 	.get_channel = wlan_hdd_cfg80211_get_channel,
 	.set_bitrate_mask = wlan_hdd_cfg80211_set_bitrate_mask,
 	.tx_control_port = wlan_hdd_cfg80211_tx_control_port,
@@ -30511,3 +30681,4 @@ static struct cfg80211_ops wlan_hdd_cfg80211_ops = {
 	.get_link_tid_map_status = wlan_hdd_cfg80211_get_t2lm_mapping_status,
 #endif
 };
+#pragma GCC diagnostic pop

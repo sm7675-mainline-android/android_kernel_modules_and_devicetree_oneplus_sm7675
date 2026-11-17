@@ -1023,6 +1023,7 @@ void __qdf_ipa_set_meta_msg_type(__qdf_ipa_msg_meta_t *meta, int type);
  */
 static bool __qdf_get_ipa_smmu_enabled(void)
 {
+#if IS_ENABLED(CONFIG_IPA3)
 	struct ipa_smmu_in_params params_in;
 	struct ipa_smmu_out_params params_out;
 
@@ -1030,6 +1031,9 @@ static bool __qdf_get_ipa_smmu_enabled(void)
 	ipa_get_smmu_params(&params_in, &params_out);
 
 	return params_out.smmu_enable;
+#else
+	return false;
+#endif
 }
 #endif
 

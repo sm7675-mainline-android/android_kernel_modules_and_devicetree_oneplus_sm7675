@@ -24,6 +24,7 @@
 #include <wlan_objmgr_vdev_obj.h>
 #include "osif_sync.h"
 #include <linux/netdevice.h>
+#include <net/gro.h>
 #include <linux/skbuff.h>
 #include <linux/etherdevice.h>
 #include <linux/if_ether.h>
@@ -227,10 +228,10 @@ void osif_dp_rx_thread_napi_gro_flush(struct napi_struct *napi,
 		if (flush_code != DP_RX_GRO_LOW_TPUT_FLUSH)
 			napi_gro_flush(napi, false);
 
-		if (napi->rx_count) {
-			netif_receive_skb_list(&napi->rx_list);
-			qdf_init_list_head(&napi->rx_list);
-			napi->rx_count = 0;
+		if (napi->gro.rx_count) {
+			netif_receive_skb_list(&napi->gro.rx_list);
+			qdf_init_list_head(&napi->gro.rx_list);
+			napi->gro.rx_count = 0;
 		}
 	}
 }

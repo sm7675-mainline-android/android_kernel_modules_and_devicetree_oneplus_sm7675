@@ -1277,7 +1277,7 @@ static void hdd_chan_change_notify_update(struct wlan_hdd_link_info *link_info)
 		dev = assoc_adapter->dev;
 	}
 
-	mutex_lock(&dev->ieee80211_ptr->mtx);
+	wiphy_lock(dev->ieee80211_ptr->wiphy);
 	if (wlan_vdev_mlme_is_active(vdev) != QDF_STATUS_SUCCESS) {
 		hdd_debug("Vdev %d mode %d not UP", vdev_id,
 			  adapter->device_mode);
@@ -1315,7 +1315,7 @@ static void hdd_chan_change_notify_update(struct wlan_hdd_link_info *link_info)
 	wlan_cfg80211_ch_switch_notify(dev, &chandef, link_id, puncture_bitmap);
 
 exit:
-	mutex_unlock(&dev->ieee80211_ptr->mtx);
+	wiphy_unlock(dev->ieee80211_ptr->wiphy);
 	hdd_objmgr_put_vdev_by_user(vdev, WLAN_OSIF_ID);
 }
 
@@ -2961,7 +2961,7 @@ QDF_STATUS hdd_hostapd_sap_event_cb(struct sap_event *sap_event,
 							  event->staMac.bytes);
 
 			if (notify_new_sta)
-				cfg80211_new_sta(dev,
+				cfg80211_new_sta(dev->ieee80211_ptr,
 						 (const u8 *)&event->
 						 staMac.bytes[0],
 						 sta_info, GFP_KERNEL);
@@ -3145,7 +3145,7 @@ QDF_STATUS hdd_hostapd_sap_event_cb(struct sap_event *sap_event,
 
 		if ((adapter->device_mode != QDF_P2P_GO_MODE) ||
 		     (!cds_is_driver_recovering())) {
-			cfg80211_del_sta(dev,
+			cfg80211_del_sta(dev->ieee80211_ptr,
 					 (const u8 *)&sta_addr.bytes[0],
 					 GFP_KERNEL);
 			hdd_debug("indicate sta deletion event");

@@ -3388,10 +3388,14 @@ static int __wlan_hdd_cfg80211_get_txpower(struct wiphy *wiphy,
 
 int wlan_hdd_cfg80211_get_txpower(struct wiphy *wiphy,
 					 struct wireless_dev *wdev,
+					 int radio_idx, unsigned int link_id,
 					 int *dbm)
 {
 	struct osif_psoc_sync *psoc_sync;
 	int errno;
+
+	if (radio_idx != -1 || link_id || wdev->valid_links)
+		return -EOPNOTSUPP;
 
 	errno = osif_psoc_sync_op_start(wiphy_dev(wiphy), &psoc_sync);
 	if (errno)
