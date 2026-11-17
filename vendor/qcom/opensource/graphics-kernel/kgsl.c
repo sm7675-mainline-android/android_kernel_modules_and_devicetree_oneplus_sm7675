@@ -1573,8 +1573,13 @@ static int kgsl_open(struct inode *inodep, struct file *filep)
 	filep->private_data = dev_priv;
 
 	result = kgsl_open_device(device);
-	if (result)
+	if (result) {
+		dev_err_ratelimited(device->dev,
+			"GPU open failed stage=first-open rc=%d loaded=%d state=%u comm=%s pid=%d\n",
+			result, device->pdev_loaded, device->state,
+			current->comm, task_pid_nr(current));
 		goto err;
+	}
 
 	/*
 	 * Get file (per process) private struct. This must be done
@@ -1584,6 +1589,9 @@ static int kgsl_open(struct inode *inodep, struct file *filep)
 	dev_priv->process_priv = kgsl_process_private_open(device);
 	if (IS_ERR(dev_priv->process_priv)) {
 		result = PTR_ERR(dev_priv->process_priv);
+		dev_err_ratelimited(device->dev,
+			"GPU open failed stage=process-private rc=%d comm=%s pid=%d\n",
+			result, current->comm, task_pid_nr(current));
 		kgsl_close_device(device);
 		goto err;
 	}
@@ -3044,7 +3052,7 @@ static int memdesc_sg_virt(struct kgsl_device *device, struct kgsl_memdesc *memd
 		goto out;
 	}
 
-	npages = get_user_pages(useraddr, sglen, write, pages, NULL);
+	npages = get_user_pages(useraddr, sglen, write ? FOLL_WRITE : 0, pages);
 	mmap_read_unlock(current->mm);
 
 	ret = (npages < 0) ? (int)npages : 0;
@@ -4837,8 +4845,8 @@ static unsigned long set_svm_area(struct file *file,
 	 * Do additoinal constraints checking on the address. Passing MAP_FIXED
 	 * ensures that the address we want gets checked
 	 */
-	ret = current->mm->get_unmapped_area(file, addr, len, 0,
-		flags & MAP_FIXED);
+	ret = __get_unmapped_area(NULL, addr, len, 0,
+		flags & MAP_FIXED, 0);
 
 	/* If it passes, attempt to set the region in the SVM */
 	if (!IS_ERR_VALUE(ret))
@@ -4938,7 +4946,7 @@ kgsl_get_unmapped_area(struct file *file, unsigned long addr,
 	}
 
 	if (!kgsl_memdesc_use_cpu_map(&entry->memdesc)) {
-		val = current->mm->get_unmapped_area(file, addr, len, 0, flags);
+		val = __get_unmapped_area(NULL, addr, len, 0, flags, 0);
 		if (IS_ERR_VALUE(val))
 			dev_err_ratelimited(device->dev,
 					       "get_unmapped_area: pid %d addr %lx pgoff %lx len %ld failed error %d\n",
@@ -5438,7 +5446,7 @@ int __init kgsl_core_init(void)
 		goto err;
 	}
 
-	kgsl_driver.class = class_create(THIS_MODULE, "kgsl");
+	kgsl_driver.class = class_create("kgsl");
 
 	if (IS_ERR(kgsl_driver.class)) {
 		result = PTR_ERR(kgsl_driver.class);

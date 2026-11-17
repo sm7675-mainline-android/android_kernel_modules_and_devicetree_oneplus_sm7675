@@ -815,8 +815,6 @@ static void set_fence_signal_bit(struct adreno_device *adreno_dev,
 	u64 flags = ADRENO_HW_FENCE_SW_STATUS_PENDING;
 	char value[32] = "unknown";
 
-	if (fence->ops->timeline_value_str)
-		fence->ops->timeline_value_str(fence, value, sizeof(value));
 
 	if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT, &fence->flags)) {
 		dev_err(&gmu->pdev->dev,
@@ -1728,8 +1726,13 @@ static int mem_alloc_reply(struct adreno_device *adreno_dev, void *rcvd)
 	hfi_get_mem_alloc_desc(rcvd, &desc);
 
 	ret = process_mem_alloc(adreno_dev, &desc);
-	if (ret)
+	if (ret) {
+		dev_err_ratelimited(&gmu->pdev->dev,
+			"GPU HFI memory allocation failed kind=%u flags=%#x size=%u align=%u handle=%u secure_buffer=%d rc=%d\n",
+			desc.mem_kind, desc.flags, desc.size, desc.align,
+			desc.gmu_mem_handle, IS_ENABLED(CONFIG_QCOM_SECURE_BUFFER), ret);
 		return ret;
+	}
 
 	memcpy(&out.desc, &desc, sizeof(out.desc));
 
@@ -2351,6 +2354,7 @@ int gen7_hwsched_hfi_start(struct adreno_device *adreno_dev)
 {
 	struct gen7_gmu_device *gmu = to_gen7_gmu(adreno_dev);
 	struct pending_cmd ack = {0};
+	const char *stage = "gmu-hfi-init";
 	int ret;
 
 	reset_hfi_queues(adreno_dev);
@@ -2374,60 +2378,73 @@ int gen7_hwsched_hfi_start(struct adreno_device *adreno_dev)
 	clear_bit(GMU_PRIV_WARMBOOT_GMU_INIT_DONE, &gmu->flags);
 	clear_bit(GMU_PRIV_WARMBOOT_GPU_BOOT_DONE, &gmu->flags);
 
+	stage = "warmboot-set-scratch";
 	ret = gen7_hwsched_hfi_send_warmboot_cmd(adreno_dev, gmu->gmu_init_scratch,
 		HFI_WARMBOOT_SET_SCRATCH, false, &ack);
 	if (ret)
 		goto err;
 
+	stage = "gpu-perf-table";
 	ret = gen7_hfi_send_gpu_perf_table(adreno_dev);
 	if (ret)
 		goto err;
 
+	stage = "bandwidth-table";
 	ret = gen7_hfi_send_generic_req(adreno_dev, &gmu->hfi.bw_table, sizeof(gmu->hfi.bw_table));
 	if (ret)
 		goto err;
 
+	stage = "acd";
 	ret = gen7_hfi_send_acd_feature_ctrl(adreno_dev);
 	if (ret)
 		goto err;
 
+	stage = "bcl";
 	ret = gen7_hfi_send_bcl_feature_ctrl(adreno_dev);
 	if (ret)
 		goto err;
 
+	stage = "clx";
 	ret = gen7_hfi_send_clx_feature_ctrl(adreno_dev);
 	if (ret)
 		goto err;
 
+	stage = "ifpc";
 	ret = gen7_hfi_send_ifpc_feature_ctrl(adreno_dev);
 	if (ret)
 		goto err;
 
+	stage = "hwsched";
 	ret = gen7_hfi_send_feature_ctrl(adreno_dev, HFI_FEATURE_HWSCHED, 1, 0);
 	if (ret)
 		goto err;
 
+	stage = "kprof";
 	ret = gen7_hfi_send_feature_ctrl(adreno_dev, HFI_FEATURE_KPROF, 1, 0);
 	if (ret)
 		goto err;
 
 	if (ADRENO_FEATURE(adreno_dev, ADRENO_LSR)) {
+		stage = "lsr";
 		ret = gen7_hfi_send_feature_ctrl(adreno_dev, HFI_FEATURE_LSR,
 				1, 0);
 		if (ret)
 			goto err;
 	}
 
+	stage = "perfcounter";
 	ret = gen7_hfi_send_perfcounter_feature_ctrl(adreno_dev);
 	if (ret)
 		goto err;
 
+	stage = "dms";
 	ret = gen7_hfi_send_dms_feature_ctrl(adreno_dev);
 	if (ret)
 		goto err;
 
 	/* Enable the long ib timeout detection */
 	if (adreno_long_ib_detect(adreno_dev)) {
+		stage = "bail-out-timer";
 		ret = gen7_hfi_send_feature_ctrl(adreno_dev,
 			HFI_FEATURE_BAIL_OUT_TIMER, 1, 0);
 		if (ret)
@@ -2444,6 +2461,7 @@ int gen7_hwsched_hfi_start(struct adreno_device *adreno_dev)
 		gen7_hfi_send_set_value(adreno_dev,
 			HFI_VALUE_LOG_GROUP, 0, gmu->log_group_mask);
 
+	stage = "core-fw-start";
 	ret = gen7_hfi_send_core_fw_start(adreno_dev);
 	if (ret)
 		goto err;
@@ -2457,24 +2475,29 @@ int gen7_hwsched_hfi_start(struct adreno_device *adreno_dev)
 		adreno_hwsched_register_hw_fence(adreno_dev);
 	}
 
+	stage = "hw-fence";
 	ret = gen7_hfi_send_hw_fence_feature_ctrl(adreno_dev);
 	if (ret)
 		goto err;
 
+	stage = "preemption";
 	ret = enable_preemption(adreno_dev);
 	if (ret)
 		goto err;
 
+	stage = "lpac";
 	ret = gen7_hfi_send_lpac_feature_ctrl(adreno_dev);
 	if (ret)
 		goto err;
 
 	if (ADRENO_FEATURE(adreno_dev, ADRENO_AQE)) {
+		stage = "aqe";
 		ret = gen7_hfi_send_feature_ctrl(adreno_dev, HFI_FEATURE_AQE, 1, 0);
 		if (ret)
 			goto err;
 	}
 
+	stage = "start-memory-handshake";
 	ret = send_start_msg(adreno_dev);
 	if (ret)
 		goto err;
@@ -2484,6 +2507,7 @@ int gen7_hwsched_hfi_start(struct adreno_device *adreno_dev)
 	 * This message will be recorded and on a warmboot this will trigger the
 	 * sequence to replay memory allocation requests and ECP task setup
 	 */
+	stage = "warmboot-start";
 	ret = send_warmboot_start_msg(adreno_dev);
 	if (ret)
 		goto err;
@@ -2493,6 +2517,7 @@ int gen7_hwsched_hfi_start(struct adreno_device *adreno_dev)
 	set_bit(GMU_PRIV_HFI_STARTED, &gmu->flags);
 
 	/* Send this message only on cold boot */
+	stage = "warmboot-query-scratch";
 	ret = gen7_hwsched_hfi_send_warmboot_cmd(adreno_dev, gmu->gmu_init_scratch,
 		HFI_WARMBOOT_QUERY_SCRATCH, true, &ack);
 	if (ret)
@@ -2501,11 +2526,18 @@ int gen7_hwsched_hfi_start(struct adreno_device *adreno_dev)
 	if (adreno_dev->warmboot_enabled)
 		set_bit(GMU_PRIV_WARMBOOT_GMU_INIT_DONE, &gmu->flags);
 
+	stage = "default-votes";
 	ret = gen7_hwsched_setup_default_votes(adreno_dev);
 
 err:
-	if (ret)
+	if (ret) {
+		dev_err_ratelimited(&gmu->pdev->dev,
+			"GPU HFI start failed stage=%s rc=%d hfi=%#x warmboot=%d mem_entries=%u secure_buffer=%d\n",
+			stage, ret, gmu->ver.hfi, adreno_dev->warmboot_enabled,
+			to_gen7_hwsched_hfi(adreno_dev)->mem_alloc_entries,
+			IS_ENABLED(CONFIG_QCOM_SECURE_BUFFER));
 		gen7_hwsched_hfi_stop(adreno_dev);
+	}
 
 	return ret;
 }
@@ -2888,10 +2920,13 @@ static int send_context_register(struct adreno_device *adreno_dev,
 	struct adreno_context *drawctxt = ADRENO_CONTEXT(context);
 	struct hfi_register_ctxt_cmd cmd;
 	struct kgsl_pagetable *pt = context->proc_priv->pagetable;
-	int ret, asid = kgsl_mmu_pagetable_get_asid(pt, context);
+	int ret, cb, asid = kgsl_mmu_pagetable_get_asid(pt, context);
 
 	if (asid < 0)
 		return asid;
+	cb = kgsl_mmu_pagetable_get_context_bank(pt, context);
+	if (cb < 0)
+		return cb;
 
 	ret = CMD_MSG_HDR(cmd, H2F_MSG_REGISTER_CONTEXT);
 	if (ret)
@@ -2912,7 +2947,10 @@ static int send_context_register(struct adreno_device *adreno_dev,
 	cmd.pt_addr = kgsl_mmu_pagetable_get_ttbr0(pt) |
 		FIELD_PREP(GENMASK_ULL(63, KGSL_IOMMU_ASID_START_BIT), asid);
 	cmd.ctxt_idr = context->id;
-	cmd.ctxt_bank = kgsl_mmu_pagetable_get_context_bank(pt, context);
+	cmd.ctxt_bank = cb;
+	dev_dbg(KGSL_DEVICE(adreno_dev)->dev,
+		"GPU HFI register context=%u tid=%d cb=%d asid=%d ttbr0=0x%llx\n",
+		context->id, context->tid, cb, asid, cmd.pt_addr);
 
 	return gen7_hfi_send_cmd_async(adreno_dev, &cmd, sizeof(cmd));
 }

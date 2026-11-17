@@ -347,6 +347,8 @@ int gen7_gmu_device_start(struct adreno_device *adreno_dev)
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	struct gen7_gmu_device *gmu = to_gen7_gmu(adreno_dev);
+	u32 reset, result, boot;
+	int clock_index;
 
 	gmu_core_reset_trace_header(&gmu->trace);
 
@@ -361,6 +363,16 @@ int gen7_gmu_device_start(struct adreno_device *adreno_dev)
 	if (gmu_core_timed_poll_check(device, GEN7_GMU_CM3_FW_INIT_RESULT,
 			BIT(8), 100, GENMASK(8, 0))) {
 		dev_err(&gmu->pdev->dev, "GMU failed to come out of reset\n");
+		gmu_core_regread(device, GEN7_GMU_CM3_SYSRESET, &reset);
+		gmu_core_regread(device, GEN7_GMU_CM3_FW_INIT_RESULT, &result);
+		gmu_core_regread(device, GEN7_GMU_CM3_BOOT_CONFIG, &boot);
+		dev_err(&gmu->pdev->dev,
+			"GMU reset timeout: reset=%#x result=%#x boot=%#x cx=%d\n",
+			reset, result, boot, regulator_is_enabled(device->pwrctrl.cx_gdsc));
+		for (clock_index = 0; clock_index < gmu->num_clks; clock_index++)
+			dev_err(&gmu->pdev->dev, "GMU clock %s rate=%lu\n",
+				gmu->clks[clock_index].id,
+				clk_get_rate(gmu->clks[clock_index].clk));
 		gmu_core_fault_snapshot(device);
 		return -ETIMEDOUT;
 	}
@@ -2513,7 +2525,7 @@ static int gen7_gmu_iommu_init(struct gen7_gmu_device *gmu)
 {
 	int ret;
 
-	gmu->domain = iommu_domain_alloc(&platform_bus_type);
+	gmu->domain = iommu_paging_domain_alloc(&gmu->pdev->dev);
 	if (gmu->domain == NULL) {
 		dev_err(&gmu->pdev->dev, "Unable to allocate GMU IOMMU domain\n");
 		return -ENODEV;

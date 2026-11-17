@@ -9,6 +9,7 @@
 #include <linux/io.h>
 #include <linux/iopoll.h>
 #include <linux/of_platform.h>
+#include <linux/pm_runtime.h>
 #include <linux/scatterlist.h>
 #include <linux/qcom-iommu-util.h>
 #include <linux/qcom-io-pgtable.h>
@@ -1264,6 +1265,7 @@ static void kgsl_iommu_set_ttbr0(struct kgsl_iommu_context *context,
 		struct kgsl_mmu *mmu, const struct io_pgtable_cfg *pgtbl_cfg)
 {
 	struct adreno_smmu_priv *adreno_smmu;
+	int ret;
 
 	/* Quietly return if the context doesn't have a domain */
 	if (!context->domain)
@@ -1273,7 +1275,9 @@ static void kgsl_iommu_set_ttbr0(struct kgsl_iommu_context *context,
 
 	/* Enable CX and clocks before we call into SMMU to setup registers */
 	kgsl_iommu_enable_clk(mmu);
-	adreno_smmu->set_ttbr0_cfg(adreno_smmu->cookie, pgtbl_cfg);
+	ret = adreno_smmu->set_ttbr0_cfg(adreno_smmu->cookie, pgtbl_cfg);
+	if (ret)
+		dev_err(&context->pdev->dev, "GPU SMMU TTBR0 config failed: %d\n", ret);
 	kgsl_iommu_disable_clk(mmu);
 }
 
@@ -1618,6 +1622,13 @@ static void kgsl_iommu_close(struct kgsl_mmu *mmu)
 	kgsl_iommu_detach_context(&iommu->user_context);
 	kgsl_iommu_detach_context(&iommu->lpac_context);
 	kgsl_iommu_detach_context(&iommu->secure_context);
+	if (iommu->runtime_active) {
+		pm_runtime_mark_last_busy(iommu->runtime_dev);
+		pm_runtime_put_autosuspend(iommu->runtime_dev);
+		iommu->runtime_active = false;
+	}
+	put_device(iommu->runtime_dev);
+	iommu->runtime_dev = NULL;
 
 	kgsl_free_secure_page(kgsl_secure_guard_page);
 	kgsl_secure_guard_page = NULL;
@@ -2361,7 +2372,7 @@ static int kgsl_iommu_setup_context(struct kgsl_mmu *mmu,
 	dev_set_drvdata(&pdev->dev, &context->adreno_smmu);
 
 	/* Create a new context */
-	context->domain = iommu_domain_alloc(&platform_bus_type);
+	context->domain = iommu_paging_domain_alloc(&context->pdev->dev);
 	if (!context->domain) {
 		/*FIXME: Put back the pdev here? */
 		return -ENODEV;
@@ -2502,7 +2513,7 @@ static int iommu_probe_secure_context(struct kgsl_device *device,
 	context->pdev = pdev;
 	ratelimit_default_init(&context->ratelimit);
 
-	context->domain = iommu_domain_alloc(&platform_bus_type);
+	context->domain = iommu_paging_domain_alloc(&context->pdev->dev);
 	if (!context->domain) {
 		/* FIXME: put away the device */
 		return -ENODEV;
@@ -2588,6 +2599,41 @@ static void kgsl_iommu_check_config(struct kgsl_mmu *mmu,
 	of_node_put(node);
 }
 
+static int kgsl_iommu_get_runtime_device(struct kgsl_device *device,
+		struct device_node *parent)
+{
+	struct kgsl_iommu *iommu = KGSL_IOMMU(device);
+	struct device_node *context, *provider;
+	struct platform_device *pdev;
+
+	context = of_get_child_by_name(parent, "gfx3d_user");
+	if (!context)
+		return -ENODEV;
+
+	provider = of_parse_phandle(context, "iommus", 0);
+	of_node_put(context);
+	if (!provider)
+		return -ENODEV;
+
+	pdev = of_find_device_by_node(provider);
+	of_node_put(provider);
+	if (!pdev)
+		return -EPROBE_DEFER;
+
+	if (!pm_runtime_enabled(&pdev->dev)) {
+		dev_err(&device->pdev->dev,
+			"GPU SMMU provider %s runtime PM not ready\n",
+			dev_name(&pdev->dev));
+		put_device(&pdev->dev);
+		return -EPROBE_DEFER;
+	}
+
+	iommu->runtime_dev = &pdev->dev;
+	dev_info(&device->pdev->dev, "GPU SMMU runtime provider=%s\n",
+		dev_name(iommu->runtime_dev));
+	return 0;
+}
+
 int kgsl_iommu_bind(struct kgsl_device *device, struct platform_device *pdev)
 {
 	u32 val[2];
@@ -2596,6 +2642,10 @@ int kgsl_iommu_bind(struct kgsl_device *device, struct platform_device *pdev)
 	struct kgsl_mmu *mmu = &device->mmu;
 	struct device_node *node = pdev->dev.of_node;
 	struct kgsl_global_memdesc *md;
+
+	ret = kgsl_iommu_get_runtime_device(device, node);
+	if (ret)
+		return ret;
 
 	/* Create a kmem cache for the pagetable address objects */
 	if (!addr_entry_cache) {
@@ -2706,6 +2756,8 @@ int kgsl_iommu_bind(struct kgsl_device *device, struct platform_device *pdev)
 err:
 	kmem_cache_destroy(addr_entry_cache);
 	addr_entry_cache = NULL;
+	put_device(iommu->runtime_dev);
+	iommu->runtime_dev = NULL;
 
 	return ret;
 }

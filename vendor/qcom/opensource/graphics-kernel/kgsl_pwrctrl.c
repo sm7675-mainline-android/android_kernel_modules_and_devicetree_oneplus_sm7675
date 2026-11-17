@@ -1322,12 +1322,32 @@ int kgsl_pwrctrl_enable_cx_gdsc(struct kgsl_device *device)
 	}
 
 	ret = regulator_enable(regulator);
-	if (ret)
+	if (ret) {
 		dev_err(device->dev, "Failed to enable CX regulator: %d\n", ret);
+		return ret;
+	}
+
+	if (device->mmu.type == KGSL_MMU_TYPE_IOMMU &&
+	    device->mmu.iommu.runtime_dev && !device->mmu.iommu.runtime_active) {
+		struct device *smmu = device->mmu.iommu.runtime_dev;
+
+		ret = pm_runtime_resume_and_get(smmu);
+		if (ret < 0) {
+			dev_err(device->dev,
+			"GPU SMMU active reference failed provider=%s rc=%d\n",
+			dev_name(smmu), ret);
+			regulator_disable(regulator);
+			return ret;
+		}
+		device->mmu.iommu.runtime_active = true;
+		dev_info_once(device->dev,
+			"GPU SMMU runtime reference held provider=%s while CX is active\n",
+			dev_name(smmu));
+	}
 
 	kgsl_mmu_send_tlb_hint(&device->mmu, false);
 	pwr->cx_gdsc_wait = false;
-	return ret;
+	return 0;
 }
 
 static int kgsl_pwtctrl_enable_gx_gdsc(struct kgsl_device *device)
@@ -1353,6 +1373,13 @@ void kgsl_pwrctrl_disable_cx_gdsc(struct kgsl_device *device)
 
 	kgsl_mmu_send_tlb_hint(&device->mmu, true);
 	reinit_completion(&device->pwrctrl.cx_gdsc_gate);
+	if (device->mmu.iommu.runtime_active) {
+		struct device *smmu = device->mmu.iommu.runtime_dev;
+
+		device->mmu.iommu.runtime_active = false;
+		pm_runtime_mark_last_busy(smmu);
+		pm_runtime_put_autosuspend(smmu);
+	}
 	device->pwrctrl.cx_gdsc_wait = true;
 	regulator_disable(regulator);
 }

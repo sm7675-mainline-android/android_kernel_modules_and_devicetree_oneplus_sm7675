@@ -2888,7 +2888,7 @@ static int a6xx_gmu_iommu_init(struct a6xx_gmu_device *gmu)
 {
 	int ret;
 
-	gmu->domain = iommu_domain_alloc(&platform_bus_type);
+	gmu->domain = iommu_paging_domain_alloc(&gmu->pdev->dev);
 	if (gmu->domain == NULL) {
 		dev_err(&gmu->pdev->dev, "Unable to allocate GMU IOMMU domain\n");
 		return -ENODEV;

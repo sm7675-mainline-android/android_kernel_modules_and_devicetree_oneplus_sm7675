@@ -483,6 +483,7 @@ static int gen7_hwsched_gmu_first_boot(struct adreno_device *adreno_dev)
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	struct kgsl_pwrctrl *pwr = &device->pwrctrl;
 	struct gen7_gmu_device *gmu = to_gen7_gmu(adreno_dev);
+	const char *stage = "cx-enable";
 	int level, ret = 0;
 
 	kgsl_pwrctrl_request_state(device, KGSL_STATE_AWARE);
@@ -490,9 +491,13 @@ static int gen7_hwsched_gmu_first_boot(struct adreno_device *adreno_dev)
 	gen7_gmu_aop_send_acd_state(gmu, adreno_dev->acd_enabled);
 
 	ret = kgsl_pwrctrl_enable_cx_gdsc(device);
-	if (ret)
+	if (ret) {
+		dev_err_ratelimited(device->dev,
+			"GPU first GMU boot failed stage=%s rc=%d\n", stage, ret);
 		return ret;
+	}
 
+	stage = "clocks-enable";
 	ret = gen7_gmu_enable_clks(adreno_dev, GMU_MAX_PWRLEVELS - 1);
 	if (ret)
 		goto gdsc_off;
@@ -507,15 +512,18 @@ static int gen7_hwsched_gmu_first_boot(struct adreno_device *adreno_dev)
 	/* Initialize the CX timer */
 	gen7_cx_timer_init(adreno_dev);
 
+	stage = "firmware-load";
 	ret = gen7_gmu_load_fw(adreno_dev);
 	if (ret)
 		goto clks_gdsc_off;
 
+	stage = "itcm-shadow";
 	ret = gen7_gmu_itcm_shadow(adreno_dev);
 	if (ret)
 		goto clks_gdsc_off;
 
 	if (!test_bit(GMU_PRIV_PDC_RSC_LOADED, &gmu->flags)) {
+		stage = "pdc-ucode";
 		ret = gen7_load_pdc_ucode(adreno_dev);
 		if (ret)
 			goto clks_gdsc_off;
@@ -524,12 +532,14 @@ static int gen7_hwsched_gmu_first_boot(struct adreno_device *adreno_dev)
 		set_bit(GMU_PRIV_PDC_RSC_LOADED, &gmu->flags);
 	}
 
+	stage = "scm-cx-init";
 	ret = gen7_scm_gpu_init_cx_regs(adreno_dev);
 	if (ret)
 		goto clks_gdsc_off;
 
 	gen7_gmu_register_config(adreno_dev);
 
+	stage = "firmware-version";
 	ret = gen7_gmu_version_info(adreno_dev);
 	if (ret)
 		goto clks_gdsc_off;
@@ -551,16 +561,19 @@ static int gen7_hwsched_gmu_first_boot(struct adreno_device *adreno_dev)
 	/* Clear any hwsched faults that might have been left over */
 	adreno_hwsched_clear_fault(adreno_dev);
 
+	stage = "cm3-start";
 	ret = gen7_gmu_device_start(adreno_dev);
 	if (ret)
 		goto err;
 
 	gen7_get_gpu_feature_info(adreno_dev);
 
+	stage = "hfi-start";
 	ret = gen7_hwsched_hfi_start(adreno_dev);
 	if (ret)
 		goto err;
 
+	stage = "clock-rate";
 	ret = gmu_clock_set_rate(adreno_dev);
 	if (ret) {
 		gen7_hwsched_hfi_stop(adreno_dev);
@@ -586,6 +599,8 @@ err:
 	gen7_gmu_irq_disable(adreno_dev);
 
 	if (device->gmu_fault) {
+		dev_err_ratelimited(device->dev,
+			"GPU first GMU boot failed stage=%s rc=%d\n", stage, ret);
 		gen7_gmu_suspend(adreno_dev);
 
 		return ret;
@@ -595,6 +610,8 @@ clks_gdsc_off:
 	clk_bulk_disable_unprepare(gmu->num_clks, gmu->clks);
 
 gdsc_off:
+	dev_err_ratelimited(device->dev,
+		"GPU first GMU boot failed stage=%s rc=%d\n", stage, ret);
 	kgsl_pwrctrl_disable_cx_gdsc(device);
 
 	gen7_rdpm_cx_freq_update(gmu, 0);
@@ -946,25 +963,37 @@ static int gen7_hwsched_gmu_memory_init(struct adreno_device *adreno_dev)
 
 static int gen7_hwsched_gmu_init(struct adreno_device *adreno_dev)
 {
+	const char *stage = "firmware-parse";
 	int ret;
 
 	ret = gen7_gmu_parse_fw(adreno_dev);
 	if (ret)
-		return ret;
+		goto failed;
 
+	stage = "gmu-memory";
 	ret = gen7_gmu_memory_init(adreno_dev);
 	if (ret)
-		return ret;
+		goto failed;
 
+	stage = "warmboot-memory";
 	ret = gen7_gmu_warmboot_init(adreno_dev);
 	if (ret)
-		return ret;
+		goto failed;
 
+	stage = "hwsched-memory";
 	ret = gen7_hwsched_gmu_memory_init(adreno_dev);
 	if (ret)
-		return ret;
+		goto failed;
 
-	return gen7_hwsched_hfi_init(adreno_dev);
+	stage = "hfi-init";
+	ret = gen7_hwsched_hfi_init(adreno_dev);
+	if (!ret)
+		return 0;
+
+failed:
+	dev_err_ratelimited(KGSL_DEVICE(adreno_dev)->dev,
+		"GPU GMU init failed stage=%s rc=%d\n", stage, ret);
+	return ret;
 }
 
 static void gen7_hwsched_touch_wakeup(struct adreno_device *adreno_dev)
@@ -1061,6 +1090,7 @@ static int gen7_hwsched_first_boot(struct adreno_device *adreno_dev)
 {
 	struct kgsl_device *device = KGSL_DEVICE(adreno_dev);
 	struct gen7_gmu_device *gmu = to_gen7_gmu(adreno_dev);
+	const char *stage = "sqe-firmware";
 	int ret;
 
 	if (test_bit(GMU_PRIV_FIRST_BOOT_DONE, &gmu->flags))
@@ -1070,29 +1100,34 @@ static int gen7_hwsched_first_boot(struct adreno_device *adreno_dev)
 
 	ret = gen7_microcode_read(adreno_dev);
 	if (ret)
-		return ret;
+		goto failed;
 
+	stage = "aqe-firmware";
 	ret = gen7_aqe_microcode_read(adreno_dev);
 	if (ret)
-		return ret;
+		goto failed;
 
+	stage = "gpu-init";
 	ret = gen7_init(adreno_dev);
 	if (ret)
-		return ret;
+		goto failed;
 
+	stage = "gmu-init";
 	ret = gen7_hwsched_gmu_init(adreno_dev);
 	if (ret)
-		return ret;
+		goto failed;
 
 	kgsl_pwrctrl_request_state(device, KGSL_STATE_ACTIVE);
 
+	stage = "gmu-first-boot";
 	ret = gen7_hwsched_gmu_first_boot(adreno_dev);
 	if (ret)
-		return ret;
+		goto failed;
 
+	stage = "gpu-boot";
 	ret = gen7_hwsched_gpu_boot(adreno_dev);
 	if (ret)
-		return ret;
+		goto failed;
 
 	adreno_get_bus_counters(adreno_dev);
 
@@ -1131,7 +1166,14 @@ static int gen7_hwsched_first_boot(struct adreno_device *adreno_dev)
 
 	kgsl_pwrctrl_set_state(device, KGSL_STATE_ACTIVE);
 
+	dev_info_once(device->dev, "GPU first boot complete\n");
 	return 0;
+
+failed:
+	dev_err_ratelimited(device->dev,
+		"GPU first boot failed stage=%s rc=%d comm=%s pid=%d\n",
+		stage, ret, current->comm, task_pid_nr(current));
+	return ret;
 }
 
 /**

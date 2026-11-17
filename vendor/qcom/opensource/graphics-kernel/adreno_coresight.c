@@ -145,7 +145,8 @@ static void _adreno_coresight_set(struct adreno_device *adreno_dev,
 
 /* Generic function to enable coresight debug bus on adreno devices */
 static int adreno_coresight_enable(struct coresight_device *csdev,
-				struct perf_event *event, u32 mode)
+				struct perf_event *event, enum cs_mode mode,
+				struct coresight_path *path)
 {
 	struct adreno_coresight_device *adreno_csdev = dev_get_drvdata(&csdev->dev);
 	const struct adreno_coresight *coresight = adreno_csdev->coresight;
@@ -187,7 +188,9 @@ void adreno_coresight_start(struct adreno_device *adreno_dev)
 	_adreno_coresight_set(adreno_dev, &adreno_dev->cx_coresight);
 }
 
-static int adreno_coresight_trace_id(struct coresight_device *csdev)
+static int adreno_coresight_trace_id(struct coresight_device *csdev,
+				     enum cs_mode mode,
+				     struct coresight_device *sink)
 {
 	struct adreno_coresight_device *adreno_csdev = dev_get_drvdata(&csdev->dev);
 
@@ -195,12 +198,12 @@ static int adreno_coresight_trace_id(struct coresight_device *csdev)
 }
 
 static const struct coresight_ops_source adreno_coresight_source_ops = {
-	.trace_id = adreno_coresight_trace_id,
 	.enable = adreno_coresight_enable,
 	.disable = adreno_coresight_disable,
 };
 
 static const struct coresight_ops adreno_coresight_ops = {
+	.trace_id = adreno_coresight_trace_id,
 	.source_ops = &adreno_coresight_source_ops,
 };
 
@@ -213,8 +216,9 @@ void adreno_coresight_remove(struct adreno_device *adreno_dev)
 		coresight_unregister(adreno_dev->cx_coresight.dev);
 }
 
-static int funnel_gfx_enable(struct coresight_device *csdev, int inport,
-			 int outport)
+static int funnel_gfx_enable(struct coresight_device *csdev,
+			     struct coresight_connection *in,
+			     struct coresight_connection *out)
 {
 	struct kgsl_device *device = kgsl_get_device(0);
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
@@ -230,7 +234,7 @@ static int funnel_gfx_enable(struct coresight_device *csdev, int inport,
 		goto err;
 
 	/* Now that GPU is up, Call into coresight driver to enable funnel */
-	ret = adreno_dev->funnel_gfx.funnel_ops->link_ops->enable(csdev, inport, outport);
+	ret = adreno_dev->funnel_gfx.funnel_ops->link_ops->enable(csdev, in, out);
 
 	adreno_active_count_put(adreno_dev);
 err:
@@ -238,8 +242,9 @@ err:
 	return ret;
 }
 
-static void funnel_gfx_disable(struct coresight_device *csdev, int inport,
-			   int outport)
+static void funnel_gfx_disable(struct coresight_device *csdev,
+			       struct coresight_connection *in,
+			       struct coresight_connection *out)
 {
 	struct kgsl_device *device = kgsl_get_device(0);
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
@@ -255,7 +260,7 @@ static void funnel_gfx_disable(struct coresight_device *csdev, int inport,
 		goto err;
 
 	/* Now that GPU is up, Call into coresight driver to disable funnel */
-	adreno_dev->funnel_gfx.funnel_ops->link_ops->disable(csdev, inport, outport);
+	adreno_dev->funnel_gfx.funnel_ops->link_ops->disable(csdev, in, out);
 
 	adreno_active_count_put(adreno_dev);
 err:

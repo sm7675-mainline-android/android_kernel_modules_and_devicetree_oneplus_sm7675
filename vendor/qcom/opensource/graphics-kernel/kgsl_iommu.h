@@ -8,6 +8,7 @@
 
 #include <linux/adreno-smmu-priv.h>
 #include <linux/io-pgtable.h>
+#include <linux/qcom-io-pgtable.h>
 /*
  * These defines control the address range for allocations that
  * are mapped into all pagetables.
@@ -175,6 +176,8 @@ struct kgsl_iommu {
 	u32 pagesize;
 	/** @cx_gdsc: CX GDSC handle in case the IOMMU needs it */
 	struct regulator *cx_gdsc;
+	struct device *runtime_dev;
+	bool runtime_active;
 };
 
 /*
