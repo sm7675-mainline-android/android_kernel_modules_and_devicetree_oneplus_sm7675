@@ -627,4 +627,4 @@ MODULE_SOFTDEP("pre: msm-mmrm");
 MODULE_SOFTDEP("pre: synx-driver");
 MODULE_SOFTDEP("pre: frpc-adsprpc");
 MODULE_LICENSE("GPL v2");
-MODULE_IMPORT_NS(DMA_BUF);
+MODULE_IMPORT_NS("DMA_BUF");

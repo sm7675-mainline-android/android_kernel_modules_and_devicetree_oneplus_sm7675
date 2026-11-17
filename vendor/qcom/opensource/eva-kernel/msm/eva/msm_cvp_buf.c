@@ -245,7 +245,7 @@ loop:
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 13, 0))
 	file = fcheck_files(files, fd);
 #else
-	file = files_lookup_fd_rcu(files, fd);
+	file = files_lookup_fd_raw(files, fd);
 #endif
 	if (file) {
 		/* File object ref couldn't be taken.

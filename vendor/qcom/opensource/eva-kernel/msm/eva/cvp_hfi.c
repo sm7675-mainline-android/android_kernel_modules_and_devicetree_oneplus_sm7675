@@ -1825,7 +1825,7 @@ static int __get_qdss_iommu_virtual_addr(struct iris_hfi_device *dev,
 			rc = iommu_map(domain, iova,
 					qdss_addr_tbl[i].start,
 					qdss_addr_tbl[i].size,
-					IOMMU_READ | IOMMU_WRITE);
+					IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
 
 			if (rc) {
 				dprintk(CVP_ERR,
@@ -2094,6 +2094,8 @@ static int __sys_set_idle_indicator(struct iris_hfi_device *device,
 		(struct cvp_hfi_cmd_sys_set_property_packet *) &packet;
 
 	rc = call_hfi_pkt_op(device, sys_set_idle_indicator, pkt, enable);
+	if (rc)
+		return rc;
 	if (__iface_cmdq_write(device, pkt))
 		return -ENOTEMPTY;
 	return 0;
@@ -2214,7 +2216,7 @@ static int __hwfence_regs_map(struct iris_hfi_device *device)
 			device->res->reg_mappings.ipclite_iova,
 			device->res->reg_mappings.ipclite_phyaddr,
 			device->res->reg_mappings.ipclite_size,
-			IOMMU_READ | IOMMU_WRITE);
+			IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
 		if (rc) {
 			dprintk(CVP_ERR, "map ipclite fail %d %#x %#x %#x\n",
 				rc, device->res->reg_mappings.ipclite_iova,
@@ -2228,7 +2230,7 @@ static int __hwfence_regs_map(struct iris_hfi_device *device)
 			device->res->reg_mappings.hwmutex_iova,
 			device->res->reg_mappings.hwmutex_phyaddr,
 			device->res->reg_mappings.hwmutex_size,
-			IOMMU_MMIO | IOMMU_READ | IOMMU_WRITE);
+			IOMMU_MMIO | IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
 		if (rc) {
 			dprintk(CVP_ERR, "map hwmutex fail %d %#x %#x %#x\n",
 				rc, device->res->reg_mappings.hwmutex_iova,
@@ -2242,7 +2244,7 @@ static int __hwfence_regs_map(struct iris_hfi_device *device)
 			device->res->reg_mappings.aon_iova,
 			device->res->reg_mappings.aon_phyaddr,
 			device->res->reg_mappings.aon_size,
-			IOMMU_MMIO | IOMMU_READ | IOMMU_WRITE);
+			IOMMU_MMIO | IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
 		if (rc) {
 			dprintk(CVP_ERR, "map aon fail %d %#x %#x %#x\n",
 				rc, device->res->reg_mappings.aon_iova,
@@ -2256,7 +2258,7 @@ static int __hwfence_regs_map(struct iris_hfi_device *device)
 			device->res->reg_mappings.timer_iova,
 			device->res->reg_mappings.timer_phyaddr,
 			device->res->reg_mappings.timer_size,
-			IOMMU_MMIO | IOMMU_READ | IOMMU_WRITE);
+			IOMMU_MMIO | IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
 		if (rc) {
 			dprintk(CVP_ERR, "map timer fail %d %#x %#x %#x\n",
 				rc, device->res->reg_mappings.timer_iova,
@@ -3325,23 +3327,12 @@ static void __flush_debug_queue(struct iris_hfi_device *device, u8 *packet)
 		log_level = CVP_ERR;
 	}
 
-#define SKIP_INVALID_PKT(pkt_size, payload_size, pkt_hdr_size) ({ \
-		if (pkt_size < pkt_hdr_size || \
-			payload_size < MIN_PAYLOAD_SIZE || \
-			payload_size > \
-			(pkt_size - pkt_hdr_size + sizeof(u8))) { \
-			dprintk(CVP_ERR, \
-				"%s: invalid msg size - %d\n", \
-				__func__, pkt->msg_size); \
-			continue; \
-		} \
-	})
-
 	while (!__iface_dbgq_read(device, packet)) {
 		struct cvp_hfi_packet_header *pkt =
 			(struct cvp_hfi_packet_header *) packet;
 
-		if (pkt->size < sizeof(struct cvp_hfi_packet_header)) {
+		if (pkt->size < sizeof(struct cvp_hfi_packet_header) ||
+			pkt->size > CVP_IFACEQ_VAR_HUGE_PKT_SIZE) {
 			dprintk(CVP_ERR, "Invalid pkt size - %s\n",
 				__func__);
 			continue;
@@ -3350,9 +3341,20 @@ static void __flush_debug_queue(struct iris_hfi_device *device, u8 *packet)
 		if (pkt->packet_type == HFI_MSG_SYS_DEBUG) {
 			struct cvp_hfi_msg_sys_debug_packet *pkt =
 				(struct cvp_hfi_msg_sys_debug_packet *) packet;
+			size_t header_size = offsetof(
+				struct cvp_hfi_msg_sys_debug_packet, rg_msg_data);
 
-			SKIP_INVALID_PKT(pkt->size,
-				pkt->msg_size, sizeof(*pkt));
+			if (pkt->size < header_size) {
+				dprintk(CVP_ERR, "Invalid debug pkt size - %u\n",
+					pkt->size);
+				continue;
+			}
+			if (pkt->msg_size < MIN_PAYLOAD_SIZE ||
+				pkt->msg_size > pkt->size - header_size) {
+				dprintk(CVP_ERR, "%s: invalid msg size - %u\n",
+					__func__, pkt->msg_size);
+				continue;
+			}
 
 			/*
 			 * All fw messages starts with new line character. This
@@ -3361,11 +3363,10 @@ static void __flush_debug_queue(struct iris_hfi_device *device, u8 *packet)
 			 * from the message fixes this to print it in a single
 			 * line.
 			 */
-			pkt->rg_msg_data[pkt->msg_size-1] = '\0';
+			pkt->rg_msg_data[pkt->msg_size - 1] = '\0';
 			dprintk(log_level, "%s", &pkt->rg_msg_data[1]);
 		}
 	}
-#undef SKIP_INVALID_PKT
 
 	if (local_packet)
 		kfree(packet);
@@ -3934,7 +3935,7 @@ static int __init_bus(struct iris_hfi_device *device)
 		WARN(dev_get_drvdata(bus->dev), "%s's drvdata already set\n",
 				dev_name(bus->dev));
 		dev_set_drvdata(bus->dev, device);
-		bus->client = icc_get(&device->res->pdev->dev,
+		bus->client = icc_get_by_id(&device->res->pdev->dev,
 				bus->master, bus->slave);
 		if (IS_ERR_OR_NULL(bus->client)) {
 			rc = PTR_ERR(bus->client) ?: -EBADHANDLE;

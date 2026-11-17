@@ -380,14 +380,22 @@ static int alloc_dma_mem(size_t size, u32 align, int map_kernel,
 		dprintk(CVP_ERR,
 		"No IOMMU CB: allocate shared memory heap size %zx align %d\n",
 		size, align);
+		return -ENODEV;
+	}
+
+	if (!heap) {
+		dprintk(CVP_ERR, "%s: DMA-BUF heap qcom,system unavailable\n",
+			__func__);
+		return -ENODEV;
 	}
 
 	dbuf = dma_heap_buffer_alloc(heap, size, 0, 0);
+	dma_heap_put(heap);
 	if (IS_ERR_OR_NULL(dbuf)) {
+		rc = dbuf ? PTR_ERR(dbuf) : -ENOMEM;
 		dprintk(CVP_ERR,
-			"Failed to allocate shared memory = %x bytes, %x %x\n",
-			size, mem->flags, PTR_ERR(dbuf));
-		rc = -ENOMEM;
+			"Failed to allocate shared memory = %zx bytes, flags %x rc %d\n",
+			size, mem->flags, rc);
 		goto fail_shared_mem_alloc;
 	}
 

@@ -6,6 +6,7 @@
 
 #include "hfi_packetization.h"
 #include "msm_cvp_debug.h"
+#include <linux/overflow.h>
 
 /* Set up look-up tables to convert HAL_* to HFI_*.
  *
@@ -51,8 +52,8 @@ int cvp_create_pkt_cmd_sys_debug_config(
 	if (!pkt)
 		return -EINVAL;
 
-	pkt->size = sizeof(struct cvp_hfi_cmd_sys_set_property_packet) +
-		sizeof(struct cvp_hfi_debug_config) + sizeof(u32);
+	pkt->size = struct_size(pkt, rg_property_data, 2) +
+		sizeof(struct cvp_hfi_debug_config);
 	pkt->packet_type = HFI_CMD_SYS_SET_PROPERTY;
 	pkt->num_properties = 1;
 	pkt->rg_property_data[0] = HFI_PROPERTY_SYS_DEBUG_CONFIG;
@@ -74,8 +75,7 @@ int cvp_create_pkt_cmd_sys_coverage_config(
 		return -EINVAL;
 	}
 
-	pkt->size = sizeof(struct cvp_hfi_cmd_sys_set_property_packet) +
-		sizeof(u32);
+	pkt->size = struct_size(pkt, rg_property_data, 2);
 	pkt->packet_type = HFI_CMD_SYS_SET_PROPERTY;
 	pkt->num_properties = 1;
 	pkt->rg_property_data[0] = HFI_PROPERTY_SYS_CONFIG_COVERAGE;
@@ -94,8 +94,7 @@ int cvp_create_pkt_cmd_sys_set_idle_indicator(
 		return -EINVAL;
 	}
 
-	pkt->size = sizeof(struct cvp_hfi_cmd_sys_set_property_packet) +
-		sizeof(u32);
+	pkt->size = struct_size(pkt, rg_property_data, 2);
 	pkt->packet_type = HFI_CMD_SYS_SET_PROPERTY;
 	pkt->num_properties = 1;
 	pkt->rg_property_data[0] = HFI_PROPERTY_SYS_IDLE_INDICATOR;
@@ -229,9 +228,8 @@ static int create_pkt_cmd_sys_ubwc_config(
 	if (!pkt)
 		return -EINVAL;
 
-	pkt->size = sizeof(struct cvp_hfi_cmd_sys_set_property_packet) +
-		sizeof(struct cvp_hfi_cmd_sys_set_ubwc_config_packet_type)
-		+ sizeof(u32);
+	pkt->size = struct_size(pkt, rg_property_data, 2) +
+		sizeof(struct cvp_hfi_cmd_sys_set_ubwc_config_packet_type);
 
 	pkt->packet_type = HFI_CMD_SYS_SET_PROPERTY;
 	pkt->num_properties = 1;
@@ -288,8 +286,8 @@ int cvp_create_pkt_cmd_sys_power_control(
 		return -EINVAL;
 	}
 
-	pkt->size = sizeof(struct cvp_hfi_cmd_sys_set_property_packet) +
-		sizeof(struct cvp_hfi_enable) + sizeof(u32);
+	pkt->size = struct_size(pkt, rg_property_data, 2) +
+		sizeof(struct cvp_hfi_enable);
 	pkt->packet_type = HFI_CMD_SYS_SET_PROPERTY;
 	pkt->num_properties = 1;
 	pkt->rg_property_data[0] = HFI_PROPERTY_SYS_CODEC_POWER_PLANE_CTRL;

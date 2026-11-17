@@ -236,7 +236,7 @@ struct cvp_hfi_cmd_sys_set_property_packet {
 	u32 size;
 	u32 packet_type;
 	u32 num_properties;
-	u32 rg_property_data[1];
+	u32 rg_property_data[];
 };
 
 struct cvp_hfi_cmd_sys_get_property_packet {
@@ -481,7 +481,7 @@ struct cvp_hfi_msg_sys_debug_packet {
 	u32 msg_size;
 	u32 time_stamp_hi;
 	u32 time_stamp_lo;
-	u8 rg_msg_data[1];
+	u8 rg_msg_data[];
 };
 
 struct cvp_hfi_packet_header {
