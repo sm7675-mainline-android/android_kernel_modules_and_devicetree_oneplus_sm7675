@@ -3983,7 +3983,19 @@ device_type_set:
 	    device_type == DEVICE_TYPE_ZY0603 || chip->batt_nfg8011b) {
 		chip->cmd_addr.reg_ai = BQ28Z610_REG_TI;
 	}
+#if defined(CONFIG_OPLUS_CHARGER_MTK) || IS_ENABLED(CONFIG_OPLUS_ADSP_CHARGER)
 	oplus_set_fg_device_type(chip->device_type);
+#else
+	{
+		typeof(&oplus_set_fg_device_type) notify_device_type;
+
+		notify_device_type = symbol_get(oplus_set_fg_device_type);
+		if (notify_device_type) {
+			notify_device_type(chip->device_type);
+			symbol_put(oplus_set_fg_device_type);
+		}
+	}
+#endif
 	bq27541_soc_centi_init(chip);
 	dev_err(chip->dev,
 		"DEVICE_TYPE is 0x%02X, FIRMWARE_VERSION is 0x%02X  batt_zy0603 = %d\n",
@@ -10716,8 +10728,26 @@ rerun:
 	chg_info("register %s\n", fg_ic->dev->of_node->name);
 
 #ifndef CONFIG_OPLUS_CHARGER_MTK
+#if IS_ENABLED(CONFIG_OPLUS_ADSP_CHARGER)
 	oplus_vooc_get_fastchg_started_pfunc(&oplus_vooc_get_fastchg_started);
 	oplus_vooc_get_fastchg_ing_pfunc(&oplus_vooc_get_fastchg_ing);
+#else
+	{
+		typeof(&oplus_vooc_get_fastchg_started_pfunc) register_started;
+		typeof(&oplus_vooc_get_fastchg_ing_pfunc) register_ing;
+
+		register_started = symbol_get(oplus_vooc_get_fastchg_started_pfunc);
+		if (register_started) {
+			register_started(oplus_vooc_get_fastchg_started);
+			symbol_put(oplus_vooc_get_fastchg_started_pfunc);
+		}
+		register_ing = symbol_get(oplus_vooc_get_fastchg_ing_pfunc);
+		if (register_ing) {
+			register_ing(oplus_vooc_get_fastchg_ing);
+			symbol_put(oplus_vooc_get_fastchg_ing_pfunc);
+		}
+	}
+#endif
 #endif
 
 	oplus_bq27541_init(fg_ic->ic_dev);

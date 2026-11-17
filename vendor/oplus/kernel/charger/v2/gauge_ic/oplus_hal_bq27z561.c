@@ -3852,8 +3852,26 @@ static int bq27z561_driver_probe(struct i2c_client *client, const struct i2c_dev
 	chg_info("register %s\n", fg_ic->dev->of_node->name);
 
 #ifndef CONFIG_OPLUS_CHARGER_MTK
+#if IS_ENABLED(CONFIG_OPLUS_ADSP_CHARGER)
 	oplus_vooc_get_fastchg_started_pfunc(&oplus_vooc_get_fastchg_started);
 	oplus_vooc_get_fastchg_ing_pfunc(&oplus_vooc_get_fastchg_ing);
+#else
+	{
+		typeof(&oplus_vooc_get_fastchg_started_pfunc) register_started;
+		typeof(&oplus_vooc_get_fastchg_ing_pfunc) register_ing;
+
+		register_started = symbol_get(oplus_vooc_get_fastchg_started_pfunc);
+		if (register_started) {
+			register_started(oplus_vooc_get_fastchg_started);
+			symbol_put(oplus_vooc_get_fastchg_started_pfunc);
+		}
+		register_ing = symbol_get(oplus_vooc_get_fastchg_ing_pfunc);
+		if (register_ing) {
+			register_ing(oplus_vooc_get_fastchg_ing);
+			symbol_put(oplus_vooc_get_fastchg_ing_pfunc);
+		}
+	}
+#endif
 #endif
 
 	oplus_bq27z561_init(fg_ic->ic_dev);

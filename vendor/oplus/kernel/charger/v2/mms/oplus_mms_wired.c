@@ -2603,7 +2603,7 @@ done:
 	oplus_set_usbtemp_wakelock(chip, false);
 }
 
-static enum alarmtimer_restart oplus_usbtemp_alarm_timer_func(struct alarm *alarm, ktime_t now)
+static void oplus_usbtemp_alarm_timer_func(struct alarm *alarm, ktime_t now)
 {
 	struct oplus_mms_wired *chip = container_of(
 		alarm, struct oplus_mms_wired, usbtemp_alarm_timer);
@@ -2611,8 +2611,6 @@ static enum alarmtimer_restart oplus_usbtemp_alarm_timer_func(struct alarm *alar
 	chg_info("timer is up now.\n");
 	oplus_set_usbtemp_wakelock(chip, true);
 	schedule_work(&chip->usbtemp_restart_work);
-
-	return ALARMTIMER_NORESTART;
 }
 
 static int oplus_usbtemp_dischg_action(struct oplus_mms_wired *chip)

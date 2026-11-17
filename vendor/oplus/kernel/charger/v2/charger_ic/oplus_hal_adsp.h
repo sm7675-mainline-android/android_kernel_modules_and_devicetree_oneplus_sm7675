@@ -19,7 +19,9 @@
 #include <linux/pm_wakeup.h>
 #include <linux/power_supply.h>
 #include <linux/version.h>
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+#if defined(CONFIG_LEGACY_PMIC_GLINK_API)
+#include <linux/soc/qcom/pmic_glink.h>
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
 #include <linux/soc/qcom/qti_pmic_glink.h>
 #else
 #include <linux/soc/qcom/pmic_glink.h>

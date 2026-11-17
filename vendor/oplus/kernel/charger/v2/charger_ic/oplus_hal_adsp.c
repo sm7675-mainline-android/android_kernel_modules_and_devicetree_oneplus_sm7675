@@ -4194,7 +4194,7 @@ __maybe_unused static int battery_chg_init_psy(struct battery_chg_dev *bcdev)
 	int rc;
 
 	psy_cfg.drv_data = bcdev;
-	psy_cfg.of_node = bcdev->dev->of_node;
+	psy_cfg.fwnode = dev_fwnode(bcdev->dev);
 	bcdev->psy_list[PSY_TYPE_BATTERY].psy =
 		devm_power_supply_register(bcdev->dev, &batt_psy_desc,
 						&psy_cfg);
@@ -15159,7 +15159,7 @@ static int oplus_sm8350_ic_register(struct battery_chg_dev *bcdev)
 	return 0;
 }
 
-static int dev_is_pm8550b(struct device *dev, void *name)
+static int dev_is_pm8550b(struct device *dev, const void *name)
 {
 	if (dev->of_node != NULL && !strcmp(dev->of_node->name, name))
 		return 1;
