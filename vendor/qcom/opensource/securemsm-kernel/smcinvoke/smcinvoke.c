@@ -26,11 +26,7 @@
 #include <linux/of_platform.h>
 #include <linux/firmware.h>
 #include <linux/version.h>
-#if (KERNEL_VERSION(6, 3, 0) <= LINUX_VERSION_CODE)
-#include <linux/firmware/qcom/qcom_scm.h>
-#else
 #include <linux/qcom_scm.h>
-#endif
 #include <linux/freezer.h>
 #include <linux/ratelimit.h>
 #include <asm/cacheflush.h>
@@ -39,7 +35,7 @@
 #include "smcinvoke.h"
 #include "smcinvoke_object.h"
 #include "IClientEnv.h"
-#if IS_ENABLED(CONFIG_QSEECOM_PROXY)
+#if IS_ENABLED(CONFIG_QSEECOM_PROXY) || IS_ENABLED(CONFIG_QSEECOM_COMPAT)
 #include <linux/qseecom_kernel.h>
 #include "misc/qseecom_priv.h"
 #else
@@ -2924,6 +2920,9 @@ static long process_invoke_req(struct file *filp, unsigned int cmd,
 out:
 	trace_process_invoke_req_result(ret, req.result, tzobj->tzhandle,
 			req.op, req.counts);
+	if (ret || req.result)
+		pr_err_ratelimited("TEE invoke failed comm=%s pid=%d op=%u rc=%d tz_result=%d\n",
+			current->comm, task_pid_nr(current), req.op, ret, req.result);
 
 	release_filp(filp_to_release, OBJECT_COUNTS_MAX_OO);
 	if (ret) {
@@ -2967,7 +2966,11 @@ static long smcinvoke_ioctl(struct file *filp, unsigned int cmd,
 
 	switch (cmd) {
 	case SMCINVOKE_IOCTL_INVOKE_REQ:
+		pr_debug("TEE invoke enter comm=%s pid=%d\n",
+			current->comm, task_pid_nr(current));
 		ret = process_invoke_req(filp, cmd, arg);
+		pr_debug("TEE invoke return pid=%d rc=%ld\n",
+			task_pid_nr(current), ret);
 		break;
 	case SMCINVOKE_IOCTL_ACCEPT_REQ:
 		ret = process_accept_req(filp, cmd, arg);
@@ -2986,6 +2989,9 @@ static long smcinvoke_ioctl(struct file *filp, unsigned int cmd,
 		break;
 	}
 	trace_smcinvoke_ioctl(cmd, ret);
+	if (ret && ret != -ERESTARTSYS && ret != -EINTR)
+		pr_err_ratelimited("TEE ioctl cmd=%#x comm=%s pid=%d rc=%ld\n",
+			cmd, current->comm, task_pid_nr(current), ret);
 	return ret;
 }
 
@@ -3032,6 +3038,8 @@ static int smcinvoke_open(struct inode *nodp, struct file *filp)
 	tzcxt->context_type = SMCINVOKE_OBJ_TYPE_TZ_OBJ;
 	filp->private_data = tzcxt;
 
+	pr_debug("TEE open comm=%s pid=%d\n",
+		current->comm, task_pid_nr(current));
 	return 0;
 }
 
@@ -3153,6 +3161,7 @@ static int smcinvoke_probe(struct platform_device *pdev)
 	unsigned int count = 1;
 	int rc = 0;
 
+	dev_dbg(&pdev->dev, "TEE probe node=%pOF\n", pdev->dev.of_node);
 	rc = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64));
 	if (rc) {
 		pr_err("dma_set_mask_and_coherent failed %d\n", rc);
@@ -3186,9 +3195,9 @@ static int smcinvoke_probe(struct platform_device *pdev)
 	}
 	class_dev = device_create(driver_class, NULL, smcinvoke_device_no,
 						NULL, SMCINVOKE_DEV);
-	if (!class_dev) {
+	if (IS_ERR(class_dev)) {
+		rc = PTR_ERR(class_dev);
 		pr_err("class_device_create failed %d\n", rc);
-		rc = -ENOMEM;
 		goto exit_destroy_class;
 	}
 
@@ -3203,7 +3212,7 @@ static int smcinvoke_probe(struct platform_device *pdev)
 	}
 	smcinvoke_pdev = pdev;
 
-#if IS_ENABLED(CONFIG_QSEECOM_COMPAT) && IS_ENABLED(CONFIG_QSEECOM_PROXY)
+#if IS_ENABLED(CONFIG_QSEECOM_COMPAT)
 	/*If the api fails to get the func ops, print the error and continue
 	* Do not treat it as fatal*/
 	rc = get_qseecom_kernel_fun_ops();
@@ -3212,6 +3221,11 @@ static int smcinvoke_probe(struct platform_device *pdev)
 	}
 #endif
 	__wakeup_postprocess_kthread(&smcinvoke[ADCI_WORKER_THREAD]);
+	dev_dbg(&pdev->dev,
+		 "TEE ready dev=%u:%u legacy_smc=%d proxy=%d compat=%d ops_rc=%d\n",
+		 MAJOR(smcinvoke_device_no), MINOR(smcinvoke_device_no),
+		 legacy_smc_call, IS_ENABLED(CONFIG_QSEECOM_PROXY),
+		 IS_ENABLED(CONFIG_QSEECOM_COMPAT), rc);
 	return 0;
 
 exit_destroy_device:
@@ -3289,5 +3303,5 @@ module_exit(smcinvoke_exit);
 
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("SMC Invoke driver");
-MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
-MODULE_IMPORT_NS(DMA_BUF);
+MODULE_IMPORT_NS("ANDROID_GKI_VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");
+MODULE_IMPORT_NS("DMA_BUF");

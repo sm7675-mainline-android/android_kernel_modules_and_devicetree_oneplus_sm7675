@@ -4116,6 +4116,6 @@ static struct platform_driver spcom_driver = {
 
 module_platform_driver(spcom_driver);
 MODULE_SOFTDEP("pre: spss_utils");
-MODULE_IMPORT_NS(DMA_BUF);
+MODULE_IMPORT_NS("DMA_BUF");
 MODULE_LICENSE("GPL v2");
 MODULE_DESCRIPTION("Secure Processor Communication");

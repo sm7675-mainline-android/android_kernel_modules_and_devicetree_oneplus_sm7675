@@ -3325,8 +3325,10 @@ static int qce_sps_get_bam(struct qce_device *pce_dev)
 	/* Register CE Peripheral BAM device to SPS driver */
 	rc = sps_register_bam_device(&bam, &pbam->handle);
 	if (rc) {
-		pr_err("sps_register_bam_device() failed! err=%d\n", rc);
-		rc = -EIO;
+		if (rc == -EAGAIN)
+			rc = -EPROBE_DEFER;
+		dev_err_probe(pce_dev->pdev, rc,
+			      "sps_register_bam_device() failed\n");
 		iounmap(pbam->bam_iobase);
 		kfree(pbam);
 		goto ret;

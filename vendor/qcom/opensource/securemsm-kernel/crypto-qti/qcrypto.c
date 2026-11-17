@@ -4920,7 +4920,7 @@ static int  _qcrypto_probe(struct platform_device *pdev)
 	}
 	handle = qce_open(pdev, &rc);
 	if (handle == NULL) {
-		rc = -ENODEV;
+		rc = rc ?: -ENODEV;
 		goto exit_free_pdata;
 	}
 	rc = icc_set_bw(pengine->icc_path, 0, 0);

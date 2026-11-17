@@ -20,7 +20,7 @@
 #include "IQSEEComCompat.h"
 #include "IQSEEComCompatAppLoader.h"
 #include "linux/qseecom_api.h"
-#if IS_ENABLED(CONFIG_QSEECOM_PROXY)
+#if IS_ENABLED(CONFIG_QSEECOM_PROXY) || IS_ENABLED(CONFIG_QSEECOM_COMPAT)
 #include <linux/qseecom_kernel.h>
 #else
 #include "misc/qseecom_kernel.h"
@@ -493,7 +493,7 @@ static int __qseecom_send_command(struct qseecom_handle *handle, void *send_buf,
 				  Object_NULL, Object_NULL);
 }
 
-#if IS_ENABLED(CONFIG_QSEECOM_PROXY)
+#if IS_ENABLED(CONFIG_QSEECOM_PROXY) || IS_ENABLED(CONFIG_QSEECOM_COMPAT)
 const static struct qseecom_drv_ops qseecom_driver_ops = {
        .qseecom_send_command = __qseecom_send_command,
        .qseecom_start_app = __qseecom_start_app,
