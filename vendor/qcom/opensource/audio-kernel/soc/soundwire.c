@@ -16,6 +16,20 @@
 #include <linux/pm_runtime.h>
 #include <soc/soundwire.h>
 
+static int swr_of_modalias_node(struct device_node *node, char *modalias,
+				int len)
+{
+	const char *compatible, *prefix;
+	int cplen;
+
+	compatible = of_get_property(node, "compatible", &cplen);
+	if (!compatible || strlen(compatible) > cplen)
+		return -ENODEV;
+	prefix = strchr(compatible, ',');
+	strscpy(modalias, prefix ? prefix + 1 : compatible, len);
+	return 0;
+}
+
 struct boardinfo {
 	struct list_head	list;
 	struct swr_boardinfo	board_info;
@@ -170,7 +184,7 @@ int of_register_swr_devices(struct swr_master *master)
 
 		dev_dbg(&master->dev, "of_swr:register %s\n", node->full_name);
 
-		if (of_modalias_node(node, info.name, sizeof(info.name)) < 0) {
+		if (swr_of_modalias_node(node, info.name, sizeof(info.name)) < 0) {
 			dev_err_ratelimited(&master->dev, "of_swr:modalias failure %s\n",
 				node->full_name);
 			continue;
@@ -968,11 +982,6 @@ int swr_register_master(struct swr_master *master)
 		return id;
 
 	master->bus_num = id;
-	/* Can't register until driver model init */
-	if (WARN_ON(!soundwire_type.p)) {
-		status = -EAGAIN;
-		goto done;
-	}
 
 	dev_set_name(&master->dev, "swr%u", master->bus_num);
 	master->dev.bus = &soundwire_type;
@@ -1012,10 +1021,11 @@ static const struct swr_device_id *swr_match(const struct swr_device_id *id,
 	return NULL;
 }
 
-static int swr_device_match(struct device *dev, struct device_driver *driver)
+static int swr_device_match(struct device *dev, const struct device_driver *driver)
 {
 	struct swr_device *swr_dev;
-	struct swr_driver *drv = to_swr_driver(driver);
+	const struct swr_driver *drv = driver ?
+		container_of(driver, const struct swr_driver, driver) : NULL;
 
 	if (!drv)
 		return -EINVAL;

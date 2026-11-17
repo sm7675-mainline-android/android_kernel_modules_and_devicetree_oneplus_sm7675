@@ -122,7 +122,6 @@ static struct regmap_irq_chip wcd937x_regmap_irq_chip = {
 	.ack_base = WCD937X_DIGITAL_INTR_CLEAR_0,
 	.use_ack = 1,
 	.clear_ack = 1,
-	.type_base = WCD937X_DIGITAL_INTR_LEVEL_0,
 	.runtime_pm = false,
 	.handle_post_irq = wcd937x_handle_post_irq,
 	.irq_drv_data = NULL,
@@ -3594,7 +3593,7 @@ static int wcd937x_bind(struct device *dev)
 	wcd937x->rst_np = pdata->rst_np;
 	ret = msm_cdc_init_supplies(dev, &wcd937x->supplies,
 				    pdata->regulator, pdata->num_supplies);
-	if (!wcd937x->supplies) {
+	if (ret) {
 		dev_err(dev, "%s: Cannot init wcd supplies\n",
 			__func__);
 		goto err_bind_all;
@@ -3638,9 +3637,9 @@ static int wcd937x_bind(struct device *dev)
 	}
 
 	ret = wcd937x_reset(dev);
-	if (ret == -EPROBE_DEFER) {
+	if (ret) {
 		dev_err(dev, "%s: wcd reset failed!\n", __func__);
-		goto err_bind_all;
+		goto err_disable_supplies;
 	}
 	/*
 	 * Add 5msec delay to provide sufficient time for
@@ -3654,7 +3653,7 @@ static int wcd937x_bind(struct device *dev)
 	if (ret) {
 		dev_err(dev, "%s: Slave bind failed, ret = %d\n",
 			__func__, ret);
-		goto err_bind_all;
+		goto err_disable_supplies;
 	}
 
 	ret = wcd937x_parse_port_mapping(dev, "qcom,rx_swr_ch_map", CODEC_RX);
@@ -3752,7 +3751,11 @@ err_irq:
 	wcd_irq_exit(&wcd937x->irq_info, wcd937x->virq);
 err:
 	component_unbind_all(dev, wcd937x);
+err_disable_supplies:
+	msm_cdc_release_supplies(dev, wcd937x->supplies,
+				 pdata->regulator, pdata->num_supplies);
 err_bind_all:
+	dev->platform_data = NULL;
 	kfree(pdata);
 err_pdata:
 	dev_set_drvdata(dev, NULL);
@@ -3768,9 +3771,12 @@ static void wcd937x_unbind(struct device *dev)
 	wcd_irq_exit(&wcd937x->irq_info, wcd937x->virq);
 	snd_soc_unregister_component(dev);
 	component_unbind_all(dev, wcd937x);
+	msm_cdc_release_supplies(dev, wcd937x->supplies,
+				 pdata->regulator, pdata->num_supplies);
 	mutex_destroy(&wcd937x->micb_lock);
 	mutex_destroy(&wcd937x->ana_tx_clk_lock);
 	dev_set_drvdata(dev, NULL);
+	dev->platform_data = NULL;
 	kfree(pdata);
 	kfree(wcd937x);
 }
@@ -3839,12 +3845,11 @@ static int wcd937x_probe(struct platform_device *pdev)
 					&wcd937x_comp_ops, match);
 }
 
-static int wcd937x_remove(struct platform_device *pdev)
+static void wcd937x_remove(struct platform_device *pdev)
 {
 	component_master_del(&pdev->dev, &wcd937x_comp_ops);
 	dev_set_drvdata(&pdev->dev, NULL);
 
-	return 0;
 }
 
 #ifdef CONFIG_PM_SLEEP

@@ -211,6 +211,7 @@ endif
 # for PINEAPPLE sound card driver
 ifdef CONFIG_SND_SOC_PINEAPPLE
 	MACHINE_OBJS += pineapple.o
+	CFLAGS_pineapple.o += -DCONFIG_AUDIO_EXTEND_DRV_MODULE=1
 endif
 
 # for VOLCANO sound card driver

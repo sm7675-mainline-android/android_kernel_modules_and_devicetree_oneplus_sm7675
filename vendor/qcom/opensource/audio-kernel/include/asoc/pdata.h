@@ -181,7 +181,7 @@ struct wcd9xxx_pdata {
 	struct device_node *wcd_rst_np;
 	struct wcd9xxx_amic amic_settings;
 #if IS_ENABLED(CONFIG_WCD9XXX_CODEC_CORE)
-	struct slim_device slimbus_slave_device;
+	struct slim_eaddr slimbus_slave_eaddr;
 #endif
 	struct wcd9xxx_micbias_setting micbias;
 	struct wcd9xxx_ocp_setting ocp;

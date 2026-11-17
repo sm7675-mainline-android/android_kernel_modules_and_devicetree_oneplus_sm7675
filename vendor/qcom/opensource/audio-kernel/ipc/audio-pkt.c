@@ -789,7 +789,7 @@ done:
  * This function is called when the underlying device tree driver
  * removes a platform device, mapped to a Audio packet device.
  */
-static int audio_pkt_platform_driver_remove(struct platform_device *adev)
+static void audio_pkt_platform_driver_remove(struct platform_device *adev)
 {
 	struct audio_pkt_priv *ap_priv = platform_get_drvdata(adev);
 	struct audio_pkt_device *audpkt_dev = ap_priv->ap_dev;
@@ -809,7 +809,7 @@ static int audio_pkt_platform_driver_remove(struct platform_device *adev)
 	//of_platform_depopulate(&adev->dev);
 	AUDIO_PKT_INFO("Audio Packet Port Driver Removed\n");
 
-	return 0;
+	return;
 
 }
 

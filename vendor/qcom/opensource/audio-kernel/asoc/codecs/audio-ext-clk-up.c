@@ -696,9 +696,6 @@ static int audio_ref_clk_probe(struct platform_device *pdev)
 #endif
 	}
 
-        dev_dbg(&pdev->dev, "%s: PRM2 ext-clk freq: %d, lpass clk_id: %d, clk_src: %d\n",
-                        __func__, clk_priv->prm_clk_cfg.clk_freq_in_hz,
-                        clk_priv->prm_clk_cfg.clk_id, clk_priv->clk_src);
 
 	platform_set_drvdata(pdev, clk_priv);
 
@@ -735,11 +732,10 @@ static int audio_ref_clk_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int audio_ref_clk_remove(struct platform_device *pdev)
+static void audio_ref_clk_remove(struct platform_device *pdev)
 {
 	audio_put_pinctrl(pdev);
 
-	return 0;
 }
 
 static const struct of_device_id audio_ref_clk_match[] = {

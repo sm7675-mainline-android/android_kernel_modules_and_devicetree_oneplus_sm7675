@@ -15,7 +15,8 @@
 #include <linux/of_irq.h>
 #include <linux/slab.h>
 #include <linux/ratelimit.h>
-#include <soc/qcom/pm.h>
+#include <linux/pm_qos.h>
+#include <linux/pm_wakeup.h>
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
 #include <asoc/core.h>
@@ -845,7 +846,7 @@ static int wcd9xxx_irq_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int wcd9xxx_irq_remove(struct platform_device *pdev)
+static void wcd9xxx_irq_remove(struct platform_device *pdev)
 {
 	struct irq_domain *domain;
 	struct wcd9xxx_irq_drv_data *data;
@@ -853,7 +854,7 @@ static int wcd9xxx_irq_remove(struct platform_device *pdev)
 	domain = irq_find_host(pdev->dev.of_node);
 	if (unlikely(!domain)) {
 		pr_err("%s: domain is NULL", __func__);
-		return -EINVAL;
+		return;
 	}
 	data = (struct wcd9xxx_irq_drv_data *)domain->host_data;
 	data->irq = 0;
@@ -863,7 +864,6 @@ static int wcd9xxx_irq_remove(struct platform_device *pdev)
 	irq_domain_remove(data->domain);
 	kfree(data);
 
-	return 0;
 }
 
 static const struct of_device_id of_match[] = {

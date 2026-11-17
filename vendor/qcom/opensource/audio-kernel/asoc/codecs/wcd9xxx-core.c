@@ -655,8 +655,6 @@ static void wcd9xxx_device_exit(struct wcd9xxx *wcd9xxx)
 	mutex_destroy(&wcd9xxx->io_lock);
 	mutex_destroy(&wcd9xxx->xfer_lock);
 	mutex_destroy(&wcd9xxx->reset_lock);
-	if (wcd9xxx_get_intf_type() == WCD9XXX_INTERFACE_TYPE_SLIMBUS)
-		slim_remove_device(wcd9xxx->slim_slave);
 }
 
 
@@ -1030,8 +1028,7 @@ static int wcd9xxx_i2c_get_client_index(struct i2c_client *client,
 	return ret;
 }
 
-static int wcd9xxx_i2c_probe(struct i2c_client *client,
-			const struct i2c_device_id *id)
+static int wcd9xxx_i2c_probe(struct i2c_client *client)
 {
 	struct wcd9xxx *wcd9xxx = NULL;
 	struct wcd9xxx_pdata *pdata = NULL;
@@ -1220,7 +1217,7 @@ fail:
 	return ret;
 }
 
-static int wcd9xxx_i2c_remove(struct i2c_client *client)
+static void wcd9xxx_i2c_remove(struct i2c_client *client)
 {
 	struct wcd9xxx *wcd9xxx;
 	struct wcd9xxx_pdata *pdata = client->dev.platform_data;
@@ -1231,22 +1228,23 @@ static int wcd9xxx_i2c_remove(struct i2c_client *client)
 				 pdata->num_supplies);
 	wcd9xxx_device_exit(wcd9xxx);
 	dev_set_drvdata(&client->dev, NULL);
-	return 0;
 }
 
 static int wcd9xxx_dt_parse_slim_interface_dev_info(struct device *dev,
-						struct slim_device *slim_ifd)
+						struct slim_eaddr *slim_ifd)
 {
 	int ret = 0;
 	struct property *prop;
+	const char *ifd_name;
 
 	ret = of_property_read_string(dev->of_node, "qcom,cdc-slim-ifd",
-				      &slim_ifd->name);
+				      &ifd_name);
 	if (ret) {
 		dev_err(dev, "Looking up %s property in node %s failed",
 			"qcom,cdc-slim-ifd-dev", dev->of_node->full_name);
 		return -ENODEV;
 	}
+	(void)ifd_name;
 	prop = of_find_property(dev->of_node,
 			"qcom,cdc-slim-ifd-elemental-addr", NULL);
 	if (!prop) {
@@ -1259,20 +1257,19 @@ static int wcd9xxx_dt_parse_slim_interface_dev_info(struct device *dev,
 			      prop->length);
 		return -ENODEV;
 	}
-	memcpy(slim_ifd->e_addr, prop->value, 6);
+	memcpy(slim_ifd, prop->value, sizeof(*slim_ifd));
 
 	return 0;
 }
 
-static int wcd9xxx_slim_get_laddr(struct slim_device *sb,
-				  const u8 *e_addr, u8 e_len, u8 *laddr)
+static int wcd9xxx_slim_get_laddr(struct slim_device *sb)
 {
 	int ret;
 	const unsigned long timeout = jiffies +
 				      msecs_to_jiffies(SLIMBUS_PRESENT_TIMEOUT);
 
 	do {
-		ret = slim_get_logical_addr(sb, e_addr, e_len, laddr);
+		ret = slim_get_logical_addr(sb);
 		if (!ret)
 			break;
 		/* Give SLIMBUS time to report present and be ready. */
@@ -1288,7 +1285,6 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 {
 	struct wcd9xxx *wcd9xxx;
 	struct wcd9xxx_pdata *pdata;
-	const struct slim_device_id *device_id;
 	int ret = 0;
 	int intf_type;
 
@@ -1320,7 +1316,7 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 		}
 
 		ret = wcd9xxx_dt_parse_slim_interface_dev_info(&slim->dev,
-				&pdata->slimbus_slave_device);
+				&pdata->slimbus_slave_eaddr);
 		if (ret) {
 			dev_err(&slim->dev, "Error, parsing slim interface\n");
 			devm_kfree(&slim->dev, pdata);
@@ -1353,21 +1349,20 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 	if (pdata->has_micb_supply_en_gpio)
 		msm_cdc_pinctrl_select_active_state(pdata->micb_en_ctl);
 
-	device_id = slim_get_device_id(slim);
-	if (!device_id) {
-		dev_err(&slim->dev, "%s: Error, no device id\n", __func__);
-		ret = -EINVAL;
-		goto err;
-	}
-
-	wcd9xxx->type = device_id->driver_data;
+	if (of_device_is_compatible(slim->dev.of_node, "qcom,tavil-slim-pgd"))
+		wcd9xxx->type = WCD934X;
+	else if (of_device_is_compatible(slim->dev.of_node,
+					"qcom,tasha-slim-pgd"))
+		wcd9xxx->type = WCD9335;
+	else
+		wcd9xxx->type = WCD9XXX;
 	dev_info(&slim->dev, "%s: probing for wcd type: %d, name: %s\n",
-		 __func__, wcd9xxx->type, device_id->name);
+		 __func__, wcd9xxx->type, dev_name(&slim->dev));
 
 	/* wcd9xxx members init */
 	wcd9xxx->multi_reg_write = wcd9xxx_slim_multi_reg_write;
 	wcd9xxx->slim = slim;
-	slim_set_clientdata(slim, wcd9xxx);
+	slim_set_devicedata(slim, wcd9xxx);
 	wcd9xxx->reset_gpio = pdata->reset_gpio;
 	wcd9xxx->dev = &slim->dev;
 	wcd9xxx->mclk_rate = pdata->mclk_rate;
@@ -1426,36 +1421,30 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 		goto err_supplies;
 	}
 
-	ret = wcd9xxx_slim_get_laddr(wcd9xxx->slim, wcd9xxx->slim->e_addr,
-				     ARRAY_SIZE(wcd9xxx->slim->e_addr),
-				     &wcd9xxx->slim->laddr);
+	ret = wcd9xxx_slim_get_laddr(wcd9xxx->slim);
 	if (ret) {
 		dev_err(&slim->dev, "%s: failed to get slimbus %s logical address: %d\n",
-		       __func__, wcd9xxx->slim->name, ret);
+		       __func__, dev_name(&wcd9xxx->slim->dev), ret);
 		goto err_reset;
 	}
 	wcd9xxx->read_dev = wcd9xxx_slim_read_device;
 	wcd9xxx->write_dev = wcd9xxx_slim_write_device;
 	wcd9xxx_pgd_la = wcd9xxx->slim->laddr;
-	wcd9xxx->slim_slave = &pdata->slimbus_slave_device;
+	wcd9xxx->slim_slave = slim_get_device(slim->ctrl,
+				&pdata->slimbus_slave_eaddr);
+	if (IS_ERR(wcd9xxx->slim_slave)) {
+		ret = PTR_ERR(wcd9xxx->slim_slave);
+		wcd9xxx->slim_slave = NULL;
+		goto err_reset;
+	}
 	if (!wcd9xxx->dev->of_node)
 		wcd9xxx_assign_irq(&wcd9xxx->core_res,
 					pdata->irq, pdata->irq_base);
 
-	ret = slim_add_device(slim->ctrl, wcd9xxx->slim_slave);
-	if (ret) {
-		dev_err(&slim->dev, "%s: error, adding SLIMBUS device failed\n",
-			__func__);
-		goto err_reset;
-	}
-
-	ret = wcd9xxx_slim_get_laddr(wcd9xxx->slim_slave,
-				     wcd9xxx->slim_slave->e_addr,
-				     ARRAY_SIZE(wcd9xxx->slim_slave->e_addr),
-				     &wcd9xxx->slim_slave->laddr);
+	ret = wcd9xxx_slim_get_laddr(wcd9xxx->slim_slave);
 	if (ret) {
 		dev_err(&slim->dev, "%s: failed to get slimbus %s logical address: %d\n",
-		       __func__, wcd9xxx->slim->name, ret);
+		       __func__, dev_name(&wcd9xxx->slim->dev), ret);
 		goto err_slim_add;
 	}
 	wcd9xxx_inf_la = wcd9xxx->slim_slave->laddr;
@@ -1494,7 +1483,7 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 	return ret;
 
 err_slim_add:
-	slim_remove_device(wcd9xxx->slim_slave);
+	device_unregister(&wcd9xxx->slim_slave->dev);
 err_reset:
 	wcd9xxx_reset_low(wcd9xxx->dev);
 err_supplies:
@@ -1502,12 +1491,12 @@ err_supplies:
 				 pdata->regulator,
 				 pdata->num_supplies);
 err_codec:
-	slim_set_clientdata(slim, NULL);
+	slim_set_devicedata(slim, NULL);
 err:
 	devm_kfree(&slim->dev, wcd9xxx);
 	return ret;
 }
-static int wcd9xxx_slim_remove(struct slim_device *pdev)
+static void wcd9xxx_slim_remove(struct slim_device *pdev)
 {
 	struct wcd9xxx *wcd9xxx;
 	struct wcd9xxx_pdata *pdata = pdev->dev.platform_data;
@@ -1517,13 +1506,12 @@ static int wcd9xxx_slim_remove(struct slim_device *pdev)
 #endif
 	wcd9xxx = slim_get_devicedata(pdev);
 	wcd9xxx_deinit_slimslave(wcd9xxx);
-	slim_remove_device(wcd9xxx->slim_slave);
+	device_unregister(&wcd9xxx->slim_slave->dev);
 	msm_cdc_release_supplies(wcd9xxx->dev, wcd9xxx->supplies,
 				 pdata->regulator,
 				 pdata->num_supplies);
 	wcd9xxx_device_exit(wcd9xxx);
-	slim_set_clientdata(pdev, NULL);
-	return 0;
+	slim_set_devicedata(pdev, NULL);
 }
 
 static int wcd9xxx_device_up(struct wcd9xxx *wcd9xxx)
@@ -1651,32 +1639,39 @@ static int wcd9xxx_i2c_suspend(struct device *dev)
 		return 0;
 }
 
-static const struct slim_device_id wcd_slim_device_id[] = {
-	{"sitar-slim", 0},
-	{"sitar1p1-slim", 0},
-	{"tabla-slim", 0},
-	{"tabla2x-slim", 0},
-	{"taiko-slim-pgd", 0},
-	{"tapan-slim-pgd", 0},
-	{"tomtom-slim-pgd", WCD9330},
-	{"tasha-slim-pgd", WCD9335},
-	{"tavil-slim-pgd", WCD934X},
-	{}
+static const struct of_device_id wcd_slim_of_match[] = {
+	{ .compatible = "qcom,sitar-slim" },
+	{ .compatible = "qcom,sitar1p1-slim" },
+	{ .compatible = "qcom,tabla-slim" },
+	{ .compatible = "qcom,tabla2x-slim" },
+	{ .compatible = "qcom,taiko-slim-pgd" },
+	{ .compatible = "qcom,tapan-slim-pgd" },
+	{ .compatible = "qcom,tomtom-slim-pgd" },
+	{ .compatible = "qcom,tasha-slim-pgd" },
+	{ .compatible = "qcom,tavil-slim-pgd" },
+	{ }
 };
+MODULE_DEVICE_TABLE(of, wcd_slim_of_match);
+
+static int wcd9xxx_slim_device_status(struct slim_device *sldev,
+			enum slim_device_status status)
+{
+	if (status == SLIM_DEVICE_STATUS_UP)
+		return wcd9xxx_slim_device_up(sldev);
+	if (status == SLIM_DEVICE_STATUS_DOWN)
+		return wcd9xxx_slim_device_down(sldev);
+	return 0;
+}
 
 static struct slim_driver wcd_slim_driver = {
 	.driver = {
 		.name = "wcd-slim",
 		.owner = THIS_MODULE,
+		.of_match_table = wcd_slim_of_match,
 	},
 	.probe = wcd9xxx_slim_probe,
 	.remove = wcd9xxx_slim_remove,
-	.id_table = wcd_slim_device_id,
-	.resume = wcd9xxx_slim_resume,
-	.suspend = wcd9xxx_slim_suspend,
-	.device_up = wcd9xxx_slim_device_up,
-	.reset_device = wcd9xxx_slim_device_reset,
-	.device_down = wcd9xxx_slim_device_down,
+	.device_status = wcd9xxx_slim_device_status,
 };
 
 static struct i2c_device_id wcd9xxx_id_table[] = {

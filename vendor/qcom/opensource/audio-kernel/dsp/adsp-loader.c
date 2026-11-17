@@ -133,19 +133,21 @@ static void adsp_load_fw(struct work_struct *adsp_ldr_work)
 	struct platform_device *pdev = adsp_private;
 	struct adsp_loader_private *priv = NULL;
 	const char *adsp_dt = "qcom,adsp-state";
+	const char *stage = "loader-setup";
 	int rc = 0;
-	u32 adsp_state;
+	u32 adsp_state = SPF_SUBSYS_UNKNOWN;
 	struct property *prop;
 	int size;
 	phandle rproc_phandle;
 	struct rproc *rproc;
 
 	if (!pdev) {
-		dev_err(&pdev->dev, "%s: Platform device null\n", __func__);
-		goto fail;
+		pr_err("adsp-loader: boot requested without platform device\n");
+		return;
 	}
 
 	if (!pdev->dev.of_node) {
+		rc = -ENODEV;
 		dev_err(&pdev->dev,
 			"%s: Device tree information missing\n", __func__);
 		goto fail;
@@ -153,11 +155,13 @@ static void adsp_load_fw(struct work_struct *adsp_ldr_work)
 
 	priv = platform_get_drvdata(pdev);
 	if (!priv) {
+		rc = -ENODEV;
 		dev_err(&pdev->dev,
 		" %s: Private data get failed\n", __func__);
 		goto fail;
 	}
 
+	stage = "read-adsp-state";
 	rc = of_property_read_u32(pdev->dev.of_node, adsp_dt, &adsp_state);
 	if (rc) {
 		dev_err(&pdev->dev,
@@ -175,8 +179,10 @@ static void adsp_load_fw(struct work_struct *adsp_ldr_work)
 
 	rproc_phandle = be32_to_cpup(prop->value);
 	priv->pil_h = rproc_get_by_phandle(rproc_phandle);
-	if (!priv->pil_h)
+	if (!priv->pil_h) {
+		rc = -EPROBE_DEFER;
 		goto fail;
+	}
 
 	rproc = priv->pil_h;
 	if (!strcmp(rproc->name, "modem")) {
@@ -198,7 +204,11 @@ static void adsp_load_fw(struct work_struct *adsp_ldr_work)
 
 load_adsp:
 	{
+		dev_dbg(&pdev->dev, "ADSP boot: checking APM readiness timeout=%ums\n",
+			ADSP_LOADER_APM_TIMEOUT_MS);
 		adsp_state = spf_core_is_apm_ready(ADSP_LOADER_APM_TIMEOUT_MS);
+		dev_dbg(&pdev->dev, "ADSP boot: APM state=%u rproc_state=%d\n",
+			adsp_state, READ_ONCE(((struct rproc *)priv->pil_h)->state));
 		if (adsp_state == SPF_SUBSYS_DOWN) {
 			if (!priv->adsp_fw_name) {
 				dev_info(&pdev->dev, "%s: Load default ADSP\n",
@@ -206,6 +216,7 @@ load_adsp:
 			} else {
 				dev_info(&pdev->dev, "%s: Load ADSP with fw name %s\n",
 					__func__, priv->adsp_fw_name);
+				stage = "set-firmware";
 				rc = rproc_set_firmware(priv->pil_h,
 					priv->adsp_fw_name);
 				if (rc) {
@@ -220,6 +231,7 @@ load_adsp:
 			} else {
 				dev_info(&pdev->dev, "%s: Load ADSP DTB with fw name %s\n",
 					__func__, priv->adsp_dtb_name);
+				stage = "set-dtb-firmware";
 				rc = qcom_rproc_set_dtb_firmware(priv->pil_h,
 					priv->adsp_dtb_name);
 				if (rc) {
@@ -228,6 +240,7 @@ load_adsp:
 					goto fail;
 				}
 			}
+			stage = "rproc-boot";
 			rc = rproc_boot(priv->pil_h);
 			if (rc) {
 				dev_err(&pdev->dev, "%s: pil get failed,\n",
@@ -239,12 +252,14 @@ load_adsp:
 				"%s: ADSP state = %x\n", __func__, adsp_state);
 		}
 
-		dev_dbg(&pdev->dev, "%s: Q6/ADSP image is loaded\n", __func__);
+		dev_dbg(&pdev->dev, "ADSP boot worker result: APM state=%u rproc_state=%d\n",
+			adsp_state, READ_ONCE(((struct rproc *)priv->pil_h)->state));
 		return;
 	}
 
 fail:
-	dev_err(&pdev->dev, "%s: Q6 image loading failed\n", __func__);
+	dev_err(&pdev->dev, "%s: Q6 image loading failed stage=%s rc=%d\n",
+		__func__, stage, rc);
 }
 
 static void adsp_loader_do(struct platform_device *pdev)
@@ -462,7 +477,7 @@ static ssize_t adsp_boot_store(struct kobject *kobj,
 	}
 
 	if (boot == BOOT_CMD) {
-		pr_debug("%s: going to call adsp_loader_do\n", __func__);
+		pr_debug("adsp-loader: userspace boot request\n");
 		adsp_loader_do(adsp_private);
 	} else if (boot == IMAGE_UNLOAD_CMD) {
 		pr_debug("%s: going to call adsp_unloader\n", __func__);
@@ -544,14 +559,14 @@ error_return:
 	return ret;
 }
 
-static int adsp_loader_remove(struct platform_device *pdev)
+static void adsp_loader_remove(struct platform_device *pdev)
 {
 	struct adsp_loader_private *priv = NULL;
 
 	priv = platform_get_drvdata(pdev);
 
 	if (!priv)
-		return 0;
+		return;
 
 	if (priv->pil_h) {
 		rproc_shutdown(priv->pil_h);
@@ -564,7 +579,6 @@ static int adsp_loader_remove(struct platform_device *pdev)
 		priv->boot_adsp_obj = NULL;
 	}
 
-	return 0;
 }
 
 #ifdef OPLUS_ARCH_EXTENDS
@@ -632,8 +646,9 @@ static int adsp_loader_probe(struct platform_device *pdev)
 	rproc_phandle = be32_to_cpup(prop->value);
 	adsp = rproc_get_by_phandle(rproc_phandle);
 	if (!adsp) {
-		dev_err(&pdev->dev, "fail to get rproc\n");
-		return -EPROBE_DEFER;
+		return dev_err_probe(&pdev->dev, -EPROBE_DEFER,
+				     "ADSP remoteproc not registered phandle=%#x\n",
+				     rproc_phandle);
 	}
 
 	ret = adsp_loader_init_sysfs(pdev);
@@ -645,6 +660,8 @@ static int adsp_loader_probe(struct platform_device *pdev)
 
 	priv = platform_get_drvdata(pdev);
 	priv->pil_h = adsp;
+	dev_dbg(&pdev->dev, "ADSP loader bound rproc=%s state=%d auto_boot=%d\n",
+		adsp->name, READ_ONCE(adsp->state), adsp->auto_boot);
 
 	/* get adsp variant idx */
 	cell = nvmem_cell_get(&pdev->dev, "adsp_variant");

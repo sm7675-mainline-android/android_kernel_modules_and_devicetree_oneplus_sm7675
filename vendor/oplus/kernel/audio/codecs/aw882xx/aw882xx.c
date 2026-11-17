@@ -67,6 +67,11 @@ static const char *const aw882xx_switch[] = {"Disable", "Enable"};
 static const char *const aw882xx_spin[] = {"spin_0", "spin_90",
 					"spin_180", "spin_270"};
 
+static void aw882xx_component_unregister(struct device *dev)
+{
+	snd_soc_unregister_component_by_driver(dev, NULL);
+}
+
 /******************************************************
  *
  * aw882xx distinguish between codecs and components by version
@@ -77,7 +82,7 @@ static struct aw_componet_codec_ops aw_componet_codec_ops = {
 	.kcontrol_codec = snd_soc_kcontrol_component,
 	.codec_get_drvdata = snd_soc_component_get_drvdata,
 	.add_codec_controls = snd_soc_add_component_controls,
-	.unregister_codec = snd_soc_unregister_component,
+	.unregister_codec = aw882xx_component_unregister,
 	.register_codec = snd_soc_register_component,
 };
 #else

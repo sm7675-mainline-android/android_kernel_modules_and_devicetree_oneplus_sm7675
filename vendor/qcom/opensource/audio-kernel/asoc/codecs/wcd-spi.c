@@ -1557,7 +1557,7 @@ static int wcd_spi_probe(struct spi_device *spi)
 	mutex_init(&wcd_spi->xfer_mutex);
 	INIT_DELAYED_WORK(&wcd_spi->clk_dwork, wcd_spi_clk_work);
 	init_completion(&wcd_spi->resume_comp);
-	arch_setup_dma_ops(&spi->dev, 0, 0, NULL, true);
+	arch_setup_dma_ops(&spi->dev, true);
 
 	wcd_spi->spi = spi;
 	spi_set_drvdata(spi, wcd_spi);

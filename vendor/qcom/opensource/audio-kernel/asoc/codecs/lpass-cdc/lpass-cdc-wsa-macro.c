@@ -191,7 +191,7 @@ static int lpass_cdc_wsa_macro_core_vote(void *handle, bool enable);
 static int lpass_cdc_wsa_macro_hw_params(struct snd_pcm_substream *substream,
 			       struct snd_pcm_hw_params *params,
 			       struct snd_soc_dai *dai);
-static int lpass_cdc_wsa_macro_get_channel_map(struct snd_soc_dai *dai,
+static int lpass_cdc_wsa_macro_get_channel_map(const struct snd_soc_dai *dai,
 				unsigned int *tx_num, unsigned int *tx_slot,
 				unsigned int *rx_num, unsigned int *rx_slot);
 static int lpass_cdc_wsa_macro_mute_stream(struct snd_soc_dai *dai, int mute, int stream);
@@ -878,7 +878,7 @@ static int lpass_cdc_wsa_macro_hw_params(struct snd_pcm_substream *substream,
 	return 0;
 }
 
-static int lpass_cdc_wsa_macro_get_channel_map(struct snd_soc_dai *dai,
+static int lpass_cdc_wsa_macro_get_channel_map(const struct snd_soc_dai *dai,
 				unsigned int *tx_num, unsigned int *tx_slot,
 				unsigned int *rx_num, unsigned int *rx_slot)
 {
@@ -4146,7 +4146,7 @@ reg_macro_fail:
 	return ret;
 }
 
-static int lpass_cdc_wsa_macro_remove(struct platform_device *pdev)
+static void lpass_cdc_wsa_macro_remove(struct platform_device *pdev)
 {
 	struct lpass_cdc_wsa_macro_priv *wsa_priv;
 	u16 count = 0;
@@ -4154,7 +4154,7 @@ static int lpass_cdc_wsa_macro_remove(struct platform_device *pdev)
 	wsa_priv = dev_get_drvdata(&pdev->dev);
 
 	if (!wsa_priv)
-		return -EINVAL;
+		return;
 
 	if (wsa_priv->tcdev)
 		thermal_cooling_device_unregister(wsa_priv->tcdev);
@@ -4168,7 +4168,6 @@ static int lpass_cdc_wsa_macro_remove(struct platform_device *pdev)
 	lpass_cdc_unregister_macro(&pdev->dev, WSA_MACRO);
 	mutex_destroy(&wsa_priv->mclk_lock);
 	mutex_destroy(&wsa_priv->swr_clk_lock);
-	return 0;
 }
 
 static const struct of_device_id lpass_cdc_wsa_macro_dt_match[] = {

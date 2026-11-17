@@ -24,14 +24,14 @@
 #include <linux/fs.h>
 #include <linux/device.h>
 #ifndef CONFIG_SPF_CORE
-#include <ipc/apr.h>
+#include <ipc/gpr-lite.h>
 #endif
 #include <dsp/msm_audio_ion.h>
 #include <linux/msm_audio.h>
 #include <linux/qcom_scm.h>
 #include <soc/qcom/secure_buffer.h>
 
-MODULE_IMPORT_NS(DMA_BUF);
+MODULE_IMPORT_NS("DMA_BUF");
 
 #define MSM_AUDIO_ION_PROBED (1 << 0)
 
@@ -933,7 +933,7 @@ static int msm_audio_ion_probe(struct platform_device *pdev)
 	struct msm_audio_ion_private *msm_audio_ion_data = NULL;
 
 #ifndef CONFIG_SPF_CORE
-	enum apr_subsys_state q6_state;
+	enum gpr_subsys_state q6_state;
 #endif
 
 	dev_err(dev, "%s: msm_audio_ion_probe\n", __func__);
@@ -961,8 +961,8 @@ static int msm_audio_ion_probe(struct platform_device *pdev)
 		dev_dbg(dev, "%s: SMMU is Disabled\n", __func__);
 
 #ifndef CONFIG_SPF_CORE
-	q6_state = apr_get_q6_state();
-	if (q6_state == APR_SUBSYS_DOWN) {
+	q6_state = gpr_get_q6_state();
+	if (q6_state == GPR_SUBSYS_DOWN) {
 		dev_info(dev,
 			"defering %s, adsp_state %d\n",
 			__func__, q6_state);
@@ -1034,13 +1034,12 @@ static int msm_audio_ion_probe(struct platform_device *pdev)
 	return rc;
 }
 
-static int msm_audio_ion_remove(struct platform_device *pdev)
+static void msm_audio_ion_remove(struct platform_device *pdev)
 {
 	struct msm_audio_ion_private *ion_data = dev_get_drvdata(&pdev->dev);
 	ion_data->smmu_enabled = 0;
 	ion_data->device_status = 0;
 	msm_audio_ion_unreg_chrdev(ion_data);
-	return 0;
 }
 
 static struct platform_driver msm_audio_ion_driver = {

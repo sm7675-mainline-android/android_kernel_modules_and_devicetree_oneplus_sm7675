@@ -899,11 +899,10 @@ static int msm_ext_disp_audio_codec_rx_plat_probe(
 		ARRAY_SIZE(msm_ext_disp_audio_codec_rx_dais));
 }
 
-static int msm_ext_disp_audio_codec_rx_plat_remove(
+static void msm_ext_disp_audio_codec_rx_plat_remove(
 		struct platform_device *pdev)
 {
 	snd_soc_unregister_component(&pdev->dev);
-	return 0;
 }
 static const struct of_device_id msm_ext_disp_audio_codec_rx_dt_match[] = {
 	{ .compatible = "qcom,msm-ext-disp-audio-codec-rx", },

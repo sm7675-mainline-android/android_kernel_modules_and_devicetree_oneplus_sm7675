@@ -1257,7 +1257,7 @@ static int wdsp_mgr_probe(struct platform_device *pdev)
 	wdsp->ready_status = WDSP_SSR_STATUS_READY;
 	INIT_WORK(&wdsp->ssr_work, wdsp_ssr_work_fn);
 	init_completion(&wdsp->ready_compl);
-	arch_setup_dma_ops(wdsp->mdev, 0, 0, NULL, 0);
+	arch_setup_dma_ops(wdsp->mdev, false);
 	dev_set_drvdata(mdev, wdsp);
 
 	ret = component_master_add_with_match(mdev, &wdsp_master_ops,
