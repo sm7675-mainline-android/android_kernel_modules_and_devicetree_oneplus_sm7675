@@ -27,6 +27,7 @@
 #include <linux/of_irq.h>
 #include <linux/dma-buf.h>
 #include <linux/memblock.h>
+#include <linux/splashlog.h>
 #include <linux/soc/qcom/panel_event_notifier.h>
 #include <drm/drm_atomic_uapi.h>
 #include <drm/drm_probe_helper.h>
@@ -768,6 +769,7 @@ static int _sde_kms_release_shared_buffer(unsigned long mem_addr,
 					unsigned int ramdump_buffer_size)
 {
 	unsigned long pfn_start, pfn_end, pfn_idx;
+	phys_addr_t buffer_base;
 	int ret = 0;
 
 	if (!mem_addr || !splash_buffer_size) {
@@ -782,11 +784,18 @@ static int _sde_kms_release_shared_buffer(unsigned long mem_addr,
 		splash_buffer_size -= ramdump_buffer_size;
 	}
 
+	buffer_base = mem_addr;
+	if (splashlog_buffer_in_use(buffer_base, splash_buffer_size)) {
+		pr_info("splashlog: retain active buffer base=%pa size=%#x at display handoff\n",
+			&buffer_base, splash_buffer_size);
+		return 0;
+	}
+
 	pfn_start = mem_addr >> PAGE_SHIFT;
 	pfn_end = (mem_addr + splash_buffer_size) >> PAGE_SHIFT;
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0))
-	memblock_free((unsigned int*)mem_addr, splash_buffer_size);
+	memblock_free(__va(mem_addr), splash_buffer_size);
 #else
 	ret = memblock_free(mem_addr, splash_buffer_size);
 	if (ret) {
@@ -1698,6 +1707,8 @@ static void sde_kms_wait_for_commit_done(struct msm_kms *kms,
 	struct drm_device *dev;
 	int ret;
 	bool cwb_disabling;
+	bool primary_done = false;
+	bool commit_failed = false;
 
 	if (!kms || !crtc || !crtc->state) {
 		SDE_ERROR("invalid params\n");
@@ -1741,6 +1752,10 @@ static void sde_kms_wait_for_commit_done(struct msm_kms *kms,
 		SDE_EVT32_VERBOSE(DRMID(crtc));
 		ret = sde_encoder_wait_for_event(encoder, cwb_disabling ?
 						MSM_ENC_TX_COMPLETE : MSM_ENC_COMMIT_DONE);
+		if (ret)
+			commit_failed = true;
+		else if (!cwb_disabling && sde_encoder_is_primary_display(encoder))
+			primary_done = true;
 		if (ret && ret != -EWOULDBLOCK) {
 			SDE_ERROR("crtc:%d, enc:%d, cwb_d:%d, wait for commit done failed ret:%d\n",
 					DRMID(crtc), DRMID(encoder), cwb_disabling, ret);
@@ -1754,6 +1769,9 @@ static void sde_kms_wait_for_commit_done(struct msm_kms *kms,
 
 		sde_crtc_complete_flip(crtc, NULL);
 	}
+
+	if (primary_done && !commit_failed)
+		splashlog_display_takeover();
 
 	if (cwb_enc)
 		sde_encoder_virt_reset(cwb_enc);
@@ -5331,7 +5349,6 @@ static int sde_kms_hw_init(struct msm_kms *kms)
 
 	return 0;
 error:
-	_sde_kms_hw_destroy(sde_kms, platformdev);
 end:
 	return rc;
 }

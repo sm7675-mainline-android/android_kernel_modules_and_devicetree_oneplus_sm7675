@@ -2919,7 +2919,7 @@ end:
 }
 
 static int dp_display_validate_link_clock(struct dp_display_private *dp,
-		struct drm_display_mode *mode, struct dp_display_mode dp_mode)
+		const struct drm_display_mode *mode, struct dp_display_mode dp_mode)
 {
 	u32 mode_rate_khz = 0, supported_rate_khz = 0, mode_bpp = 0;
 	u32 mode_bpc = 0, tmds_clock = 0;
@@ -2977,7 +2977,7 @@ static int dp_display_validate_pixel_clock(struct dp_display_mode dp_mode,
 }
 
 static int dp_display_validate_topology(struct dp_display_private *dp,
-		struct dp_panel *dp_panel, struct drm_display_mode *mode,
+		struct dp_panel *dp_panel, const struct drm_display_mode *mode,
 		struct dp_display_mode *dp_mode,
 		const struct msm_resource_caps_info *avail_res)
 {
@@ -3057,7 +3057,7 @@ end:
 
 static enum drm_mode_status dp_display_validate_mode(
 		struct dp_display *dp_display,
-		void *panel, struct drm_display_mode *mode,
+		void *panel, const struct drm_display_mode *mode,
 		const struct msm_resource_caps_info *avail_res)
 {
 	struct dp_display_private *dp;
@@ -3863,12 +3863,12 @@ static void dp_display_set_mst_state(void *dp_display,
 		dp->mst.cbs.set_drv_state(g_dp_display, mst_state);
 }
 
-static int dp_display_remove(struct platform_device *pdev)
+static void dp_display_remove(struct platform_device *pdev)
 {
 	struct dp_display_private *dp;
 
 	if (!pdev)
-		return -EINVAL;
+		return;
 
 	dp = platform_get_drvdata(pdev);
 
@@ -3889,8 +3889,6 @@ static int dp_display_remove(struct platform_device *pdev)
 		ipc_log_context_destroy(g_dp_display->dp_aux_ipc_log);
 		g_dp_display->dp_aux_ipc_log = NULL;
 	}
-
-	return 0;
 }
 
 static int dp_pm_prepare(struct device *dev)

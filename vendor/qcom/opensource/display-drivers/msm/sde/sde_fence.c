@@ -760,10 +760,8 @@ void sde_sync_put(void *fence)
 
 void sde_fence_dump(struct dma_fence *fence)
 {
-	char timeline_str[TIMELINE_VAL_LENGTH];
+	char timeline_str[TIMELINE_VAL_LENGTH] = "n/a";
 
-	if (fence->ops->timeline_value_str)
-		fence->ops->timeline_value_str(fence, timeline_str, TIMELINE_VAL_LENGTH);
 
 //#ifdef OPLUS_ARCH_EXTENDS
 	if(!strcmp(fence->ops->get_driver_name(fence), "kgsl-timeline")) {
@@ -918,25 +916,6 @@ static void sde_fence_release(struct dma_fence *fence)
 	}
 }
 
-static void sde_fence_value_str(struct dma_fence *fence, char *str, int size)
-{
-	if (!fence || !str)
-		return;
-
-	snprintf(str, size, "%llu", fence->seqno);
-}
-
-static void sde_fence_timeline_value_str(struct dma_fence *fence, char *str,
-		int size)
-{
-	struct sde_fence *f = to_sde_fence(fence);
-
-	if (!fence || !f->ctx || !str)
-		return;
-
-	snprintf(str, size, "%d", f->ctx->done_count);
-}
-
 static struct dma_fence_ops sde_fence_ops = {
 	.get_driver_name = sde_fence_get_driver_name,
 	.get_timeline_name = sde_fence_get_timeline_name,
@@ -944,8 +923,6 @@ static struct dma_fence_ops sde_fence_ops = {
 	.signaled = sde_fence_signaled,
 	.wait = dma_fence_default_wait,
 	.release = sde_fence_release,
-	.fence_value_str = sde_fence_value_str,
-	.timeline_value_str = sde_fence_timeline_value_str,
 };
 
 /**
@@ -1241,11 +1218,8 @@ void sde_fence_timeline_status(struct sde_fence_context *ctx,
 
 void sde_fence_list_dump(struct dma_fence *fence, struct seq_file **s)
 {
-	char timeline_str[TIMELINE_VAL_LENGTH];
+	char timeline_str[TIMELINE_VAL_LENGTH] = "n/a";
 
-	if (fence->ops->timeline_value_str)
-		fence->ops->timeline_value_str(fence,
-		timeline_str, TIMELINE_VAL_LENGTH);
 
 	seq_printf(*s, "fence name:%s timeline name:%s seqno:0x%llx timeline:%s signaled:0x%x\n",
 		fence->ops->get_driver_name(fence),

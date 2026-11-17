@@ -86,8 +86,10 @@ int sde_vm_msgq_init(struct sde_vm *sde_vm)
 
 	msgq_handle = gh_msgq_register(GH_MSGQ_LABEL_DISPLAY);
 	if (IS_ERR(msgq_handle)) {
-		SDE_ERROR("gh_msgq_register failed, hdl=%p\n", msgq_handle);
-		return -EINVAL;
+		rc = PTR_ERR(msgq_handle);
+		SDE_ERROR("gh_msgq_register failed, label=%d rc=%d\n",
+				GH_MSGQ_LABEL_DISPLAY, rc);
+		return rc;
 	}
 
 	sde_vm->msgq_handle = msgq_handle;
@@ -100,7 +102,7 @@ int sde_vm_msgq_init(struct sde_vm *sde_vm)
 	if (IS_ERR(msgq_listener_thread)) {
 		SDE_ERROR("kthread creation failed for msgq, hdl: %p\n",
 				msgq_listener_thread);
-		rc = -EINVAL;
+		rc = PTR_ERR(msgq_listener_thread);
 		goto kthread_create_fail;
 	}
 
@@ -119,9 +121,13 @@ done:
 
 void sde_vm_msgq_deinit(struct sde_vm *sde_vm)
 {
-	if (sde_vm->msgq_listener_thread)
+	if (sde_vm->msgq_listener_thread) {
 		kthread_stop(sde_vm->msgq_listener_thread);
+		sde_vm->msgq_listener_thread = NULL;
+	}
 
-	if (sde_vm->msgq_handle)
+	if (sde_vm->msgq_handle) {
 		gh_msgq_unregister(sde_vm->msgq_handle);
+		sde_vm->msgq_handle = NULL;
+	}
 }

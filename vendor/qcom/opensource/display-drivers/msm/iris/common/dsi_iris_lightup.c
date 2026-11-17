@@ -4875,15 +4875,13 @@ static int _iris_dev_probe(struct platform_device *pdev)
 	return 0;
 }
 
-static int _iris_dev_remove(struct platform_device *pdev)
+static void _iris_dev_remove(struct platform_device *pdev)
 {
 	struct iris_cfg *pcfg = dev_get_drvdata(&pdev->dev);
 
 	IRIS_LOGI("%s()", __func__);
 
 	iris_release_gpio(pcfg);
-
-	return 0;
 }
 
 static const struct of_device_id iris_dt_match[] = {

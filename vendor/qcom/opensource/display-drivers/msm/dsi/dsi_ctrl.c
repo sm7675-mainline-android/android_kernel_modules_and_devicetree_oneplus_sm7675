@@ -2069,9 +2069,7 @@ static int dsi_ctrl_buffer_deinit(struct dsi_ctrl *dsi_ctrl)
 
 		msm_gem_put_iova(dsi_ctrl->tx_cmd_buf, aspace);
 
-		mutex_lock(&dsi_ctrl->drm_dev->struct_mutex);
-		msm_gem_free_object(dsi_ctrl->tx_cmd_buf);
-		mutex_unlock(&dsi_ctrl->drm_dev->struct_mutex);
+		drm_gem_object_put(dsi_ctrl->tx_cmd_buf);
 		dsi_ctrl->tx_cmd_buf = NULL;
 	}
 
@@ -2278,7 +2276,7 @@ fail:
 	return rc;
 }
 
-static int dsi_ctrl_dev_remove(struct platform_device *pdev)
+static void dsi_ctrl_dev_remove(struct platform_device *pdev)
 {
 	int rc = 0;
 	struct dsi_ctrl *dsi_ctrl;
@@ -2320,7 +2318,6 @@ static int dsi_ctrl_dev_remove(struct platform_device *pdev)
 	devm_kfree(&pdev->dev, dsi_ctrl);
 
 	platform_set_drvdata(pdev, NULL);
-	return 0;
 }
 
 static struct platform_driver dsi_ctrl_driver = {
@@ -3476,9 +3473,13 @@ int dsi_ctrl_update_host_config(struct dsi_ctrl *ctrl,
 		return -EINVAL;
 	}
 
+	pr_debug("DISPLAY DIAG host ctrl=%u lock wait locked=%d\n",
+		ctrl->cell_index, mutex_is_locked(&ctrl->ctrl_lock));
 	mutex_lock(&ctrl->ctrl_lock);
+	pr_debug("DISPLAY DIAG host ctrl=%u lock acquired\n", ctrl->cell_index);
 
 	rc = dsi_ctrl_validate_panel_info(ctrl, config);
+	pr_debug("DISPLAY DIAG host ctrl=%u validate rc=%d\n", ctrl->cell_index, rc);
 	if (rc) {
 		DSI_CTRL_ERR(ctrl, "panel validation failed, rc=%d\n", rc);
 		goto error;
@@ -3490,8 +3491,11 @@ int dsi_ctrl_update_host_config(struct dsi_ctrl *ctrl,
 		 * for dynamic clk switch case link frequence would
 		 * be updated dsi_display_dynamic_clk_switch().
 		 */
+		pr_debug("DISPLAY DIAG host ctrl=%u calculate-freq begin\n", ctrl->cell_index);
 		rc = dsi_ctrl_update_link_freqs(ctrl, config, clk_handle,
 				mode);
+		pr_debug("DISPLAY DIAG host ctrl=%u calculate-freq end rc=%d\n",
+			ctrl->cell_index, rc);
 		if (rc) {
 			DSI_CTRL_ERR(ctrl, "failed to update link frequency, rc=%d\n",
 					rc);

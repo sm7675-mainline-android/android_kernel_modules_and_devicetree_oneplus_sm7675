@@ -3683,6 +3683,7 @@ static int sde_cache_parse_dt(struct device_node *np,
 		SDE_DEBUG("cache controller missing, will disable img cache\n");
 		return 0;
 	}
+	of_node_put(llcc_node);
 
 	for (i = 0; i < SDE_SYS_CACHE_MAX; i++) {
 		struct sde_sc_cfg *sc_cfg = &sde_cfg->sc_cfg[i];
@@ -3700,8 +3701,11 @@ static int sde_cache_parse_dt(struct device_node *np,
 
 		slice = llcc_slice_getd(usecase_id);
 		if (IS_ERR_OR_NULL(slice)) {
-			SDE_ERROR("failed to get system cache %ld\n", PTR_ERR(slice));
-			return -EINVAL;
+			int rc = slice ? PTR_ERR(slice) : -ENODEV;
+
+			SDE_ERROR("system cache uid=%u hw_rev=%#x failed: %d\n",
+					usecase_id, sde_cfg->hw_rev, rc);
+			return rc;
 		}
 
 		sc_cfg->llcc_uid = usecase_id;

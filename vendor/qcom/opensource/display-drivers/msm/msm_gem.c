@@ -310,7 +310,7 @@ vm_fault_t msm_gem_fault(struct vm_fault *vmf)
 	VERB("Inserting %pK pfn %lx, pa %lx", (void *)vmf->address,
 			pfn, pfn << PAGE_SHIFT);
 
-	ret = vmf_insert_mixed(vma, vmf->address, __pfn_to_pfn_t(pfn, PFN_DEV));
+	ret = vmf_insert_mixed(vma, vmf->address, pfn);
 out_unlock:
 	mutex_unlock(&msm_obj->lock);
 out:
@@ -792,7 +792,7 @@ int msm_gem_madvise(struct drm_gem_object *obj, unsigned madv)
 
 	mutex_lock(&msm_obj->lock);
 
-	WARN_ON(!mutex_is_locked(&obj->dev->struct_mutex));
+	WARN_ON(!mutex_is_locked(&obj->dev->mode_config.mutex));
 
 	if (msm_obj->madv != __MSM_MADV_PURGED)
 		msm_obj->madv = madv;
@@ -1389,5 +1389,5 @@ exit:
 }
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0))
-MODULE_IMPORT_NS(DMA_BUF);
+MODULE_IMPORT_NS("DMA_BUF");
 #endif

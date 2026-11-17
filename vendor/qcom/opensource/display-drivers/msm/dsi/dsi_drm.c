@@ -178,6 +178,7 @@ static void dsi_convert_to_msm_mode(const struct dsi_display_mode *dsi_mode,
 }
 
 static int dsi_bridge_attach(struct drm_bridge *bridge,
+			struct drm_encoder *encoder,
 			enum drm_bridge_attach_flags flags)
 {
 	struct dsi_bridge *c_bridge = to_dsi_bridge(bridge);
@@ -208,6 +209,13 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 		return;
 	}
 
+	pr_debug("DISPLAY DIAG pre-enable bridge=%d caller=%s/%d power=%d initialized=%d flags=%#x fps=%u\n",
+		c_bridge->id, current->comm, current->pid,
+		c_bridge->display->panel->power_mode,
+		dsi_panel_initialized(c_bridge->display->panel),
+		c_bridge->dsi_mode.dsi_mode_flags,
+		c_bridge->dsi_mode.timing.refresh_rate);
+
 	if (bridge->encoder->crtc->state->active_changed)
 		atomic_set(&c_bridge->display->panel->esd_recovery_pending, 0);
 
@@ -222,8 +230,10 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 #endif
 
 	/* By this point mode should have been validated through mode_fixup */
+	pr_debug("DISPLAY DIAG set-mode begin bridge=%d\n", c_bridge->id);
 	rc = dsi_display_set_mode(c_bridge->display,
 			&(c_bridge->dsi_mode), 0x0);
+	pr_debug("DISPLAY DIAG set-mode end bridge=%d rc=%d\n", c_bridge->id, rc);
 	if (rc) {
 		DSI_ERR("[%d] failed to perform a mode set, rc=%d\n",
 		       c_bridge->id, rc);
@@ -256,7 +266,9 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 	}
 
 	SDE_ATRACE_BEGIN("dsi_display_prepare");
+	pr_debug("DISPLAY DIAG prepare begin bridge=%d\n", c_bridge->id);
 	rc = dsi_display_prepare(c_bridge->display);
+	pr_debug("DISPLAY DIAG prepare end bridge=%d rc=%d\n", c_bridge->id, rc);
 	if (rc) {
 		DSI_ERR("[%d] DSI display prepare failed, rc=%d\n",
 		       c_bridge->id, rc);
@@ -266,7 +278,11 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 	SDE_ATRACE_END("dsi_display_prepare");
 
 	SDE_ATRACE_BEGIN("dsi_display_enable");
+	pr_debug("DISPLAY DIAG enable begin bridge=%d\n", c_bridge->id);
 	rc = dsi_display_enable(c_bridge->display);
+	pr_debug("DISPLAY DIAG enable end bridge=%d rc=%d power=%d initialized=%d\n",
+		c_bridge->id, rc, c_bridge->display->panel->power_mode,
+		dsi_panel_initialized(c_bridge->display->panel));
 	if (rc) {
 		DSI_ERR("[%d] DSI display enable failed, rc=%d\n",
 				c_bridge->id, rc);
@@ -278,6 +294,8 @@ static void dsi_bridge_pre_enable(struct drm_bridge *bridge)
 	if (rc)
 		DSI_ERR("Continuous splash pipeline cleanup failed, rc=%d\n",
 									rc);
+	pr_debug("DISPLAY DIAG pre-enable end bridge=%d cleanup_rc=%d\n",
+		c_bridge->id, rc);
 }
 
 static void dsi_bridge_enable(struct drm_bridge *bridge)
@@ -299,6 +317,8 @@ static void dsi_bridge_enable(struct drm_bridge *bridge)
 	}
 	display = c_bridge->display;
 
+	pr_debug("DISPLAY DIAG post-enable begin bridge=%d caller=%s/%d\n",
+		c_bridge->id, current->comm, current->pid);
 	rc = dsi_display_post_enable(display);
 	if (rc)
 		DSI_ERR("[%d] DSI display post enabled failed, rc=%d\n",
@@ -319,6 +339,8 @@ static void dsi_bridge_enable(struct drm_bridge *bridge)
 				true);
 		}
 	}
+	pr_debug("DISPLAY DIAG post-enable end bridge=%d rc=%d power=%d\n",
+		c_bridge->id, rc, display->panel->power_mode);
 }
 
 static void dsi_bridge_disable(struct drm_bridge *bridge)
@@ -355,6 +377,9 @@ static void dsi_bridge_disable(struct drm_bridge *bridge)
 	}
 
 	rc = dsi_display_pre_disable(c_bridge->display);
+	pr_debug("DISPLAY POWER pre-disable bridge=%d rc=%d power=%d caller=%s/%d\n",
+		c_bridge->id, rc, display && display->panel ? display->panel->power_mode : -1,
+		current->comm, current->pid);
 	if (rc) {
 		DSI_ERR("[%d] DSI display pre disable failed, rc=%d\n",
 		       c_bridge->id, rc);
@@ -374,9 +399,13 @@ static void dsi_bridge_post_disable(struct drm_bridge *bridge)
 
 	display = c_bridge->display;
 
+	pr_debug("DISPLAY POWER disable begin bridge=%d power=%d caller=%s/%d\n",
+		c_bridge->id, display && display->panel ? display->panel->power_mode : -1,
+		current->comm, current->pid);
 	SDE_ATRACE_BEGIN("dsi_bridge_post_disable");
 	SDE_ATRACE_BEGIN("dsi_display_disable");
 	rc = dsi_display_disable(c_bridge->display);
+	pr_debug("DISPLAY POWER disable end bridge=%d rc=%d\n", c_bridge->id, rc);
 	if (rc) {
 		DSI_ERR("[%d] DSI display disable failed, rc=%d\n",
 		       c_bridge->id, rc);
@@ -389,6 +418,8 @@ static void dsi_bridge_post_disable(struct drm_bridge *bridge)
 		sde_connector_helper_bridge_post_disable(display->drm_conn);
 
 	rc = dsi_display_unprepare(c_bridge->display);
+	pr_debug("DISPLAY POWER unprepare end bridge=%d rc=%d power=%d\n",
+		c_bridge->id, rc, display && display->panel ? display->panel->power_mode : -1);
 	if (rc) {
 		DSI_ERR("[%d] DSI display unprepare failed, rc=%d\n",
 		       c_bridge->id, rc);
@@ -1304,7 +1335,7 @@ end:
 }
 
 enum drm_mode_status dsi_conn_mode_valid(struct drm_connector *connector,
-		struct drm_display_mode *mode,
+		const struct drm_display_mode *mode,
 		void *display, const struct msm_resource_caps_info *avail_res)
 {
 	struct dsi_display_mode dsi_mode;
@@ -1490,6 +1521,8 @@ struct dsi_bridge *dsi_drm_bridge_init(struct dsi_display *display,
 	bridge->display = display;
 	bridge->base.funcs = &dsi_bridge_ops;
 	bridge->base.encoder = encoder;
+	bridge->base.container = bridge;
+	kref_init(&bridge->base.refcount);
 
 	rc = drm_bridge_attach(encoder, &bridge->base, NULL,
 				DRM_BRIDGE_ATTACH_NO_CONNECTOR);
@@ -1500,14 +1533,15 @@ struct dsi_bridge *dsi_drm_bridge_init(struct dsi_display *display,
 
 	return bridge;
 error_free_bridge:
-	kfree(bridge);
+	drm_bridge_put(&bridge->base);
 error:
 	return ERR_PTR(rc);
 }
 
 void dsi_drm_bridge_cleanup(struct dsi_bridge *bridge)
 {
-	kfree(bridge);
+	if (bridge)
+		drm_bridge_put(&bridge->base);
 }
 
 static bool is_valid_poms_switch(struct dsi_display_mode *mode_a,

@@ -60,6 +60,7 @@ void convert_to_drm_mode(const struct dp_display_mode *dp_mode,
 }
 
 static int dp_bridge_attach(struct drm_bridge *dp_bridge,
+				struct drm_encoder *encoder,
 				enum drm_bridge_attach_flags flags)
 {
 	struct dp_bridge *bridge = to_dp_bridge(dp_bridge);
@@ -658,6 +659,8 @@ int dp_drm_bridge_init(void *data, struct drm_encoder *encoder,
 	bridge->display = display;
 	bridge->base.funcs = &dp_bridge_ops;
 	bridge->base.encoder = encoder;
+	bridge->base.container = bridge;
+	kref_init(&bridge->base.refcount);
 
 	priv = dev->dev_private;
 
@@ -680,7 +683,7 @@ int dp_drm_bridge_init(void *data, struct drm_encoder *encoder,
 
 	return 0;
 error_free_bridge:
-	kfree(bridge);
+	drm_bridge_put(&bridge->base);
 error:
 	return rc;
 }
@@ -690,11 +693,13 @@ void dp_drm_bridge_deinit(void *data)
 	struct dp_display *display = data;
 	struct dp_bridge *bridge = display->bridge;
 
-	kfree(bridge);
+	display->bridge = NULL;
+	if (bridge)
+		drm_bridge_put(&bridge->base);
 }
 
 enum drm_mode_status dp_connector_mode_valid(struct drm_connector *connector,
-		struct drm_display_mode *mode, void *display,
+		const struct drm_display_mode *mode, void *display,
 		const struct msm_resource_caps_info *avail_res)
 {
 	int rc = 0, vrefresh;
@@ -781,7 +786,7 @@ int dp_connector_install_properties(void *display, struct drm_connector *conn)
 	 */
 	if (!base_conn->colorspace_property) {
 		/* This is the base connector. create the drm property */
-		rc = drm_mode_create_dp_colorspace_property(base_conn);
+		rc = drm_mode_create_dp_colorspace_property(base_conn, 0);
 		if (rc)
 			return rc;
 	} else {

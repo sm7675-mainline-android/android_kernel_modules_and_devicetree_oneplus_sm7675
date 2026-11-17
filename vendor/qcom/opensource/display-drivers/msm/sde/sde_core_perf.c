@@ -310,7 +310,7 @@ static inline enum sde_crtc_client_type _get_sde_client_type(
 		return RT_CLIENT;
 }
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)) && defined(LLCC_STALING_MODE_SUPPORTED)
 void sde_core_perf_llcc_stale_configure(struct sde_mdss_cfg *sde_cfg, struct llcc_slice_desc *slice)
 {
 	struct llcc_staling_mode_params params = {0};

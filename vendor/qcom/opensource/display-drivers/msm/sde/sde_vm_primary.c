@@ -285,8 +285,9 @@ static void _sde_vm_deinit(struct sde_kms *sde_kms, struct sde_vm_ops *ops)
 	memset(ops, 0, sizeof(*ops));
 
 	sde_vm = to_vm_primary(sde_kms->vm);
+	sde_kms->vm = NULL;
 
-	sde_vm_msgq_deinit(sde_kms->vm);
+	sde_vm_msgq_deinit(&sde_vm->base);
 
 	if (sde_vm->base.mem_notification_cookie)
 		gh_mem_notifier_unregister(
@@ -295,6 +296,7 @@ static void _sde_vm_deinit(struct sde_kms *sde_kms, struct sde_vm_ops *ops)
 	if (sde_vm->irq_desc)
 		sde_vm_free_irq(sde_vm->irq_desc);
 
+	mutex_destroy(&sde_vm->base.vm_res_lock);
 	kfree(sde_vm);
 }
 
@@ -325,21 +327,20 @@ int sde_vm_primary_init(struct sde_kms *kms)
 		return -ENOMEM;
 
 	_sde_vm_set_ops(&sde_vm->base.vm_ops);
+	sde_vm->base.sde_kms = kms;
+	sde_vm->base.io_mem_handle = -1;
+	mutex_init(&sde_vm->base.vm_res_lock);
+	kms->vm = &sde_vm->base;
 
 	cookie = gh_mem_notifier_register(GH_MEM_NOTIFIER_TAG_DISPLAY,
 			       sde_vm_mem_release_notification_handler, sde_vm);
-	if (!cookie) {
-		SDE_ERROR("fails to register RM mem release notifier\n");
-		rc = -EINVAL;
+	if (IS_ERR_OR_NULL(cookie)) {
+		rc = cookie ? PTR_ERR(cookie) : -EINVAL;
+		SDE_ERROR("failed to register RM mem release notifier, rc=%d\n", rc);
 		goto init_fail;
 	}
 
 	sde_vm->base.mem_notification_cookie = cookie;
-	sde_vm->base.sde_kms = kms;
-	sde_vm->base.io_mem_handle = -1; // 0 is a valid handle
-	kms->vm = &sde_vm->base;
-
-	mutex_init(&sde_vm->base.vm_res_lock);
 
 	rc = sde_vm_msgq_init(kms->vm);
 	if (rc) {

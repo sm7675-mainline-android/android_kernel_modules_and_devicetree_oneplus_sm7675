@@ -719,9 +719,7 @@ free_aspace_cb:
 	msm_gem_address_space_unregister_cb(display->aspace,
 			dsi_display_aspace_cb_locked, display);
 free_gem:
-	mutex_lock(&display->drm_dev->struct_mutex);
-	msm_gem_free_object(display->tx_cmd_buf);
-	mutex_unlock(&display->drm_dev->struct_mutex);
+	drm_gem_object_put(display->tx_cmd_buf);
 error:
 	return rc;
 }
@@ -1709,6 +1707,8 @@ int dsi_display_set_power(struct drm_connector *connector,
 		return -EINVAL;
 	}
 
+	pr_debug("DISPLAY POWER request from=%d to=%d caller=%s/%d\n",
+		display->panel->power_mode, power_mode, current->comm, current->pid);
 	switch (power_mode) {
 	case SDE_MODE_DPMS_LP1:
 		rc = dsi_panel_set_lp1(display->panel);
@@ -4917,7 +4917,9 @@ static int dsi_display_set_link_frequencies(struct dsi_display *display)
 {
 	int rc = 0, i = 0;
 
+	pr_debug("DISPLAY DIAG link-freq manager-lock wait\n");
 	dsi_clk_acquire_mngr_lock(display->dsi_clk_handle);
+	pr_debug("DISPLAY DIAG link-freq manager-lock acquired\n");
 	display_for_each_ctrl(i, display) {
 		struct dsi_display_ctrl *ctrl = &display->ctrl[i];
 
@@ -5622,9 +5624,12 @@ static int dsi_display_set_mode_sub(struct dsi_display *display,
 	else if (mode->dsi_mode_flags & DSI_MODE_FLAG_POMS_TO_CMD)
 		display->panel->panel_mode = DSI_OP_CMD_MODE;
 
+	pr_debug("DISPLAY DIAG host-config begin panel-locked=%d\n",
+		mutex_is_locked(&display->panel->panel_lock));
 	rc = dsi_panel_get_host_cfg_for_mode(display->panel,
 					     mode,
 					     &display->config);
+	pr_debug("DISPLAY DIAG host-config end rc=%d\n", rc);
 	if (rc) {
 		DSI_ERR("[%s] failed to get host config for mode, rc=%d\n",
 		       display->name, rc);
@@ -5710,9 +5715,11 @@ static int dsi_display_set_mode_sub(struct dsi_display *display,
 
 	display_for_each_ctrl(i, display) {
 		ctrl = &display->ctrl[i];
+		pr_debug("DISPLAY DIAG ctrl-config begin ctrl=%d\n", i);
 		rc = dsi_ctrl_update_host_config(ctrl->ctrl, &display->config,
 				mode, mode->dsi_mode_flags,
 				display->dsi_clk_handle);
+		pr_debug("DISPLAY DIAG ctrl-config end ctrl=%d rc=%d\n", i, rc);
 		if (rc) {
 			DSI_ERR("[%s] failed to update ctrl config, rc=%d\n",
 			       display->name, rc);
@@ -5722,7 +5729,9 @@ static int dsi_display_set_mode_sub(struct dsi_display *display,
 
 	if (!(mode->dsi_mode_flags & (DSI_MODE_FLAG_SEAMLESS | DSI_MODE_FLAG_VRR |
 		       DSI_MODE_FLAG_DYN_CLK))) {
+		pr_debug("DISPLAY DIAG link-freq begin\n");
 		rc = dsi_display_set_link_frequencies(display);
+		pr_debug("DISPLAY DIAG link-freq end rc=%d\n", rc);
 		if (rc) {
 			DSI_ERR("Failed to set display link frequencies\n");
 			goto error;
@@ -5750,10 +5759,13 @@ static int dsi_display_set_mode_sub(struct dsi_display *display,
 		 */
 		display_for_each_ctrl(i, display) {
 			ctrl = &display->ctrl[i];
+			pr_debug("DISPLAY DIAG phy-timing begin ctrl=%d locked=%d commit=%d\n",
+				i, mutex_is_locked(&ctrl->phy->phy_lock), commit_phy_timing);
 			 rc = dsi_phy_set_timing_params(ctrl->phy,
 				priv_info->phy_timing_val,
 				priv_info->phy_timing_len,
 				commit_phy_timing);
+			pr_debug("DISPLAY DIAG phy-timing end ctrl=%d rc=%d\n", i, rc);
 			if (rc)
 				DSI_ERR("failed to add DSI PHY timing params\n");
 		}
@@ -6715,21 +6727,21 @@ end:
 	return rc;
 }
 
-int dsi_display_dev_remove(struct platform_device *pdev)
+void dsi_display_dev_remove(struct platform_device *pdev)
 {
-	int rc = 0, i = 0;
+	int i = 0;
 	struct dsi_display *display;
 	struct dsi_display_ctrl *ctrl;
 
 	if (!pdev) {
 		DSI_ERR("Invalid device\n");
-		return -EINVAL;
+		return;
 	}
 
 	display = platform_get_drvdata(pdev);
 	if (!display || !display->panel_node) {
 		DSI_ERR("invalid display\n");
-		return -EINVAL;
+		return;
 	}
 
 #if defined(CONFIG_PXLW_IRIS)
@@ -6755,7 +6767,6 @@ int dsi_display_dev_remove(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, NULL);
 	devm_kfree(&pdev->dev, display);
-	return rc;
 }
 
 int dsi_display_get_num_of_displays(void)
@@ -6908,7 +6919,7 @@ static int dsi_display_drm_ext_get_modes(
 
 static enum drm_mode_status dsi_display_drm_ext_mode_valid(
 		struct drm_connector *connector,
-		struct drm_display_mode *mode,
+		const struct drm_display_mode *mode,
 		void *disp, const struct msm_resource_caps_info *avail_res)
 {
 	struct dsi_display *display = disp;
@@ -8521,11 +8532,16 @@ int dsi_display_set_mode(struct dsi_display *display,
 		return -EINVAL;
 	}
 
+	pr_debug("DISPLAY DIAG mode display-lock wait locked=%d caller=%s/%d\n",
+		mutex_is_locked(&display->display_lock), current->comm, current->pid);
 	mutex_lock(&display->display_lock);
+	pr_debug("DISPLAY DIAG mode display-lock acquired ctrls=%u\n",
+		display->ctrl_count);
 
 	adj_mode = *mode;
 	timing = adj_mode.timing;
 	adjust_timing_by_ctrl_count(display, &adj_mode);
+	pr_debug("DISPLAY DIAG mode timing adjusted\n");
 
 	if (!display->panel->cur_mode) {
 		display->panel->cur_mode =
@@ -8537,17 +8553,20 @@ int dsi_display_set_mode(struct dsi_display *display,
 	}
 
 	rc = dsi_display_validate_mode_set(display, &adj_mode, flags);
+	pr_debug("DISPLAY DIAG mode validate rc=%d\n", rc);
 	if (rc) {
 		DSI_ERR("[%s] mode cannot be set\n", display->name);
 		goto error;
 	}
 
 	rc = dsi_display_set_mode_sub(display, &adj_mode, flags);
+	pr_debug("DISPLAY DIAG mode-sub end rc=%d\n", rc);
 	if (rc) {
 		DSI_ERR("[%s] failed to set mode\n", display->name);
 		goto error;
 	}
 
+	pr_debug("DISPLAY DIAG mode-info begin\n");
 #ifdef OPLUS_FEATURE_DISPLAY_ADFR
 	DSI_INFO("mdp_transfer_time=%d, hactive=%d, vactive=%d, fps=%d, h_skew=%d, clk_rate=%llu, h_sync_width=%d,\
 				h_front_porch%d, h_back_porch=%d, v_back_porch=%d, v_sync_width=%d, v_front_porch=%d\n",
@@ -8561,18 +8580,27 @@ int dsi_display_set_mode(struct dsi_display *display,
 			timing.h_active, timing.v_active, timing.refresh_rate,
 			adj_mode.priv_info->clk_rate_hz);
 #endif /* OPLUS_FEATURE_DISPLAY_ADFR */
+	pr_debug("DISPLAY DIAG mode-info end\n");
+	pr_debug("DISPLAY DIAG mode-event begin\n");
 	SDE_EVT32(adj_mode.priv_info->mdp_transfer_time_us,
 			timing.h_active, timing.v_active, timing.refresh_rate,
 			adj_mode.priv_info->clk_rate_hz);
+	pr_debug("DISPLAY DIAG mode-event end\n");
 
+	pr_debug("DISPLAY DIAG mode-copy begin\n");
 	memcpy(display->panel->cur_mode, &adj_mode, sizeof(adj_mode));
+	pr_debug("DISPLAY DIAG mode-copy end\n");
 #if defined(CONFIG_PXLW_IRIS)
+	pr_debug("DISPLAY DIAG mode-iris begin panel-mode=%d\n", display->config.panel_mode);
 	if (iris_is_chip_supported() && (display->config.panel_mode == DSI_OP_VIDEO_MODE))
 		iris_update_panel_ap_te(timing.refresh_rate);
+	pr_debug("DISPLAY DIAG mode-iris end\n");
 #endif
 
 error:
+	pr_debug("DISPLAY DIAG mode unlock begin rc=%d\n", rc);
 	mutex_unlock(&display->display_lock);
+	pr_debug("DISPLAY DIAG mode unlocked rc=%d\n", rc);
 	return rc;
 }
 
@@ -9731,7 +9759,12 @@ static void dsi_display_handle_poms_te(struct work_struct *work)
 	}
 
 	dsi = &panel->mipi_device;
-	rc = mipi_dsi_dcs_set_tear_off(dsi);
+	{
+		struct mipi_dsi_multi_context ctx = { .dsi = dsi };
+
+		mipi_dsi_dcs_set_tear_off_multi(&ctx);
+		rc = ctx.accum_err;
+	}
 
 error:
 	mutex_unlock(&panel->panel_lock);

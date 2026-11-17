@@ -178,6 +178,7 @@ static inline void msm_kms_init(struct msm_kms *kms,
 		const struct msm_kms_funcs *funcs)
 {
 	kms->funcs = funcs;
+	kms->irq = -1;
 }
 
 #if IS_ENABLED(CONFIG_DRM_MSM_MDP4)

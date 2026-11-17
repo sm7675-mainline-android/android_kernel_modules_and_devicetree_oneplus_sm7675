@@ -302,7 +302,7 @@ static int dp_mst_find_vcpi_slots(struct drm_dp_mst_topology_mgr *mgr, int pbn)
 	struct drm_dp_mst_topology_state *state;
 
 	state = to_drm_dp_mst_topology_state(mgr->base.state);
-	num_slots = DIV_ROUND_UP(pbn, state->pbn_div);
+	num_slots = DIV_ROUND_UP(dfixed_const(pbn), state->pbn_div.full);
 
 	/* max. time slots - one slot for MTP header */
 	if (num_slots > 63)
@@ -321,7 +321,7 @@ static int dp_mst_calc_pbn_mode(struct dp_display_mode *dp_mode)
 	dsc_en = pinfo->comp_info.enabled;
 	bpp = dsc_en ? DSC_BPP(pinfo->comp_info.dsc_info.config) : pinfo->bpp;
 
-	pbn = drm_dp_calc_pbn_mode(pinfo->pixel_clk_khz, bpp, false);
+	pbn = drm_dp_calc_pbn_mode(pinfo->pixel_clk_khz, bpp);
 	pbn_fp = drm_fixp_from_fraction(pbn, 1);
 	pinfo->pbn_no_overhead = pbn;
 
@@ -353,7 +353,7 @@ static const struct dp_drm_mst_fw_helper_ops drm_dp_mst_fw_helper_ops = {
 	.topology_mgr_set_mst      = drm_dp_mst_topology_mgr_set_mst,
 	.get_vcpi_info             = _dp_mst_get_vcpi_info,
 	.atomic_release_time_slots = drm_dp_atomic_release_time_slots,
-	.reset_vcpi_slots          = drm_dp_remove_payload,
+	.reset_vcpi_slots          = drm_dp_remove_payload_part1,
 #else
 	.calc_pbn_mode             = dp_mst_calc_pbn_mode,
 	.find_vcpi_slots           = drm_dp_find_vcpi_slots,
@@ -375,6 +375,7 @@ static const struct dp_drm_mst_fw_helper_ops drm_dp_mst_fw_helper_ops = {
 /* DP MST Bridge OPs */
 
 static int dp_mst_bridge_attach(struct drm_bridge *dp_bridge,
+				struct drm_encoder *encoder,
 				enum drm_bridge_attach_flags flags)
 {
 	struct dp_mst_bridge *bridge;
@@ -461,8 +462,8 @@ static int _dp_mst_compute_config(struct drm_atomic_state *state,
 #if (KERNEL_VERSION(6, 1, 0) <= LINUX_VERSION_CODE)
 	mst_state = to_drm_dp_mst_topology_state(mst->mst_mgr.base.state);
 
-	if (!mst_state->pbn_div)
-		mst_state->pbn_div = mst->dp_display->get_mst_pbn_div(mst->dp_display);
+	if (!mst_state->pbn_div.full)
+		mst_state->pbn_div.full = dfixed_const(mst->dp_display->get_mst_pbn_div(mst->dp_display));
 
 	rc = mst->mst_fw_cbs->atomic_find_time_slots(state, &mst->mst_mgr, c_conn->mst_port, pbn);
 	if (rc < 0) {
@@ -1101,6 +1102,7 @@ int dp_mst_drm_bridge_init(void *data, struct drm_encoder *encoder)
 	bridge->display = display;
 	bridge->base.funcs = &dp_mst_bridge_ops;
 	bridge->base.encoder = encoder;
+	kref_init(&bridge->base.refcount);
 
 	priv = dev->dev_private;
 
@@ -1281,7 +1283,7 @@ end:
 
 enum drm_mode_status dp_mst_connector_mode_valid(
 		struct drm_connector *connector,
-		struct drm_display_mode *mode,
+		const struct drm_display_mode *mode,
 		void *display, const struct msm_resource_caps_info *avail_res)
 {
 	struct dp_display *dp_display = display;

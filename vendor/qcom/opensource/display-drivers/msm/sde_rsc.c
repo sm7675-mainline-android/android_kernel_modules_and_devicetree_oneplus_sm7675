@@ -1848,12 +1848,11 @@ rsc_alloc_fail:
 	return ret;
 }
 
-static int sde_rsc_remove(struct platform_device *pdev)
+static void sde_rsc_remove(struct platform_device *pdev)
 {
 	struct sde_rsc_priv *rsc = platform_get_drvdata(pdev);
 
 	sde_rsc_deinit(pdev, rsc);
-	return 0;
 }
 
 static int sde_rsc_rpmh_probe(struct platform_device *pdev)
@@ -1874,14 +1873,12 @@ static int sde_rsc_rpmh_probe(struct platform_device *pdev)
 	return 0;
 }
 
-int sde_rsc_rpmh_remove(struct platform_device *pdev)
+void sde_rsc_rpmh_remove(struct platform_device *pdev)
 {
 	int i;
 
 	for (i = 0; i < MAX_RSC_COUNT; i++)
 		rpmh_dev[i] = NULL;
-
-	return 0;
 }
 
 static const struct of_device_id dt_match[] = {

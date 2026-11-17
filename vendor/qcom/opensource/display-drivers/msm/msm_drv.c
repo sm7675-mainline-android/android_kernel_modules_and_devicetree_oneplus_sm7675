@@ -168,7 +168,6 @@ int msm_atomic_check(struct drm_device *dev,
 
 static const struct drm_mode_config_funcs mode_config_funcs = {
 	.fb_create = msm_framebuffer_create,
-	.output_poll_changed = msm_fb_output_poll_changed,
 	.atomic_check = msm_atomic_check,
 	.atomic_commit = msm_atomic_commit,
 	.atomic_state_alloc = msm_atomic_state_alloc,
@@ -413,6 +412,7 @@ static int msm_irq_postinstall(struct drm_device *dev)
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
 static int msm_irq_install(struct drm_device *dev, unsigned int irq)
 {
+	struct msm_drm_private *priv = dev->dev_private;
 	int ret;
 
 	if (irq == IRQ_NOTCONNECTED)
@@ -430,6 +430,7 @@ static int msm_irq_install(struct drm_device *dev, unsigned int irq)
 		return ret;
 	}
 
+	priv->kms->irq = irq;
 	return 0;
 }
 
@@ -438,8 +439,12 @@ static void msm_irq_uninstall(struct drm_device *dev)
 	struct msm_drm_private *priv = dev->dev_private;
 	struct msm_kms *kms = priv->kms;
 
+	if (kms->irq < 0)
+		return;
+
 	kms->funcs->irq_uninstall(kms);
 	free_irq(kms->irq, dev);
+	kms->irq = -1;
 }
 #else
 static void msm_irq_uninstall(struct drm_device *dev)
@@ -488,6 +493,16 @@ static int msm_drm_uninit(struct device *dev)
 	struct msm_vm_client_entry *client_entry, *tmp;
 	int i;
 
+	if (priv->registered) {
+		drm_dev_unregister(ddev);
+#if IS_ENABLED(CONFIG_DRM_FBDEV_EMULATION)
+		if (fbdev && priv->fbdev)
+			msm_fbdev_free(ddev);
+#endif
+		drm_atomic_helper_shutdown(ddev);
+		priv->registered = false;
+	}
+
 	flush_workqueue(priv->wq);
 	pm_runtime_get_sync(dev);
 
@@ -510,25 +525,14 @@ static int msm_drm_uninit(struct device *dev)
 	if (kms && kms->funcs)
 		kms->funcs->debugfs_destroy(kms);
 
-	sde_dbg_destroy();
-	debugfs_remove_recursive(priv->debug_root);
 	drm_mode_config_cleanup(ddev);
-
-	if (priv->registered) {
-		drm_dev_unregister(ddev);
-		priv->registered = false;
-	}
-
-#if IS_ENABLED(CONFIG_DRM_FBDEV_EMULATION)
-	if (fbdev && priv->fbdev)
-		msm_fbdev_free(ddev);
-#endif /* CONFIG_DRM_FBDEV_EMULATION */
-	drm_atomic_helper_shutdown(ddev);
+	if (kms) {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
-	msm_irq_uninstall(ddev);
+		msm_irq_uninstall(ddev);
 #else
-	drm_irq_uninstall(ddev);
+		drm_irq_uninstall(ddev);
 #endif
+	}
 
 	if (kms && kms->funcs) {
 		kms->funcs->destroy(kms);
@@ -559,6 +563,9 @@ static int msm_drm_uninit(struct device *dev)
 	mutex_unlock(&priv->vm_client_lock);
 
 	msm_mdss_destroy(ddev);
+
+	sde_dbg_destroy();
+	debugfs_remove_recursive(priv->debug_root);
 
 	ddev->dev_private = NULL;
 	destroy_workqueue(priv->wq);
@@ -950,6 +957,7 @@ static int msm_drm_component_init(struct device *dev)
 
 	kms = _msm_drm_component_init_helper(priv, ddev, dev, pdev);
 	if (IS_ERR_OR_NULL(kms)) {
+		ret = kms ? PTR_ERR(kms) : -ENODEV;
 		DISP_DEV_ERR(dev, "msm_drm_component_init_helper failed\n");
 		goto fail;
 	}
@@ -1135,10 +1143,10 @@ static void msm_postclose(struct drm_device *dev, struct drm_file *file)
 	if (kms->funcs && kms->funcs->postclose)
 		kms->funcs->postclose(kms, file);
 
-	mutex_lock(&dev->struct_mutex);
+	mutex_lock(&dev->mode_config.mutex);
 	if (ctx == priv->lastctx)
 		priv->lastctx = NULL;
-	mutex_unlock(&dev->struct_mutex);
+	mutex_unlock(&dev->mode_config.mutex);
 
 	mutex_lock(&ctx->power_lock);
 	if (ctx->enable_refcnt) {
@@ -1302,7 +1310,7 @@ static int msm_ioctl_gem_madvise(struct drm_device *dev, void *data,
 		return -EINVAL;
 	}
 
-	ret = mutex_lock_interruptible(&dev->struct_mutex);
+	ret = mutex_lock_interruptible(&dev->mode_config.mutex);
 	if (ret)
 		return ret;
 
@@ -1321,7 +1329,7 @@ static int msm_ioctl_gem_madvise(struct drm_device *dev, void *data,
 	drm_gem_object_put(obj);
 
 unlock:
-	mutex_unlock(&dev->struct_mutex);
+	mutex_unlock(&dev->mode_config.mutex);
 	return ret;
 }
 
@@ -1824,6 +1832,7 @@ static const struct drm_ioctl_desc msm_ioctls[] = {
 
 static const struct file_operations fops = {
 	.owner              = THIS_MODULE,
+	.fop_flags          = FOP_UNSIGNED_OFFSET,
 	.open               = drm_open,
 	.release            = msm_release,
 	.unlocked_ioctl     = drm_ioctl,
@@ -1841,7 +1850,6 @@ static struct drm_driver msm_driver = {
 				DRIVER_MODESET,
 	.open               = msm_open,
 	.postclose          = msm_postclose,
-	.lastclose          = msm_lastclose,
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0))
 	.irq_handler        = msm_irq,
 	.irq_preinstall     = msm_irq_preinstall,
@@ -1862,13 +1870,11 @@ static struct drm_driver msm_driver = {
 	.prime_fd_to_handle = drm_gem_prime_fd_to_handle,
 	.gem_prime_import   = msm_gem_prime_import,
 	.gem_prime_import_sg_table = msm_gem_prime_import_sg_table,
-	.gem_prime_mmap     = msm_gem_prime_mmap,
 	.ioctls             = msm_ioctls,
 	.num_ioctls         = ARRAY_SIZE(msm_ioctls),
 	.fops               = &fops,
 	.name               = "msm_drm",
 	.desc               = "MSM Snapdragon DRM",
-	.date               = "20130625",
 	.major              = MSM_VERSION_MAJOR,
 	.minor              = MSM_VERSION_MINOR,
 	.patchlevel         = MSM_VERSION_PATCHLEVEL,
@@ -2319,12 +2325,10 @@ static int msm_pdev_probe(struct platform_device *pdev)
 	return component_master_add_with_match(&pdev->dev, &msm_drm_ops, match);
 }
 
-static int msm_pdev_remove(struct platform_device *pdev)
+static void msm_pdev_remove(struct platform_device *pdev)
 {
 	component_master_del(&pdev->dev, &msm_drm_ops);
 	of_platform_depopulate(&pdev->dev);
-
-	return 0;
 }
 
 static void msm_pdev_shutdown(struct platform_device *pdev)
