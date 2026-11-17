@@ -34,6 +34,7 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/of_platform.h>
+#include <linux/ratelimit.h>
 #include <linux/dma-map-ops.h>
 #include <linux/cma.h>
 #include <linux/sort.h>
@@ -293,7 +294,7 @@ enum fastrpc_remote_subsys_state {
 #define DSPSIGNAL_VERBOSE(x, ...)
 /*#define DSPSIGNAL_VERBOSE ADSPRPC_INFO*/
 
-MODULE_IMPORT_NS(DMA_BUF);
+MODULE_IMPORT_NS("DMA_BUF");
 
 static struct dentry *debugfs_root;
 static struct dentry *debugfs_global_file;
@@ -1156,18 +1157,29 @@ static int get_buffer_attr(struct dma_buf *buf, bool *exclusive_access, bool *hl
 {
 	const int *vmids_list = NULL, *perms = NULL;
 	int err = 0, vmids_list_len = 0;
+	int current_vmid;
 
 	*exclusive_access = false;
 	*hlos_access = false;
 	err = mem_buf_dma_buf_get_vmperm(buf, &vmids_list, &perms, &vmids_list_len);
 	if (err)
 		goto bail;
+	current_vmid = mem_buf_current_vmid();
+	if (current_vmid < 0) {
+		pr_err_ratelimited("adsprpc: FastRPC DIAG VMID query failed rc=%d\n",
+			current_vmid);
+		err = current_vmid;
+		goto bail;
+	}
+	pr_info_once("adsprpc: FastRPC DIAG current_vmid=%d acl_count=%d first_vmid=%d\n",
+		current_vmid, vmids_list_len,
+		vmids_list_len ? vmids_list[0] : -1);
 
 	/*
 	 * If one VM has access to buffer and is the current VM,
 	 * then VM has exclusive access to buffer
 	 */
-	if (vmids_list_len == 1 && vmids_list[0] == mem_buf_current_vmid())
+	if (vmids_list_len == 1 && vmids_list[0] == current_vmid)
 		*exclusive_access = true;
 
 #if IS_ENABLED(CONFIG_MSM_ADSPRPC_TRUSTED)
@@ -3063,6 +3075,39 @@ bail:
 	return;
 }
 
+static bool diag_dma;
+module_param(diag_dma, bool, 0644);
+
+static void fastrpc_diag_dma(struct smq_invoke_ctx *ctx)
+{
+	static DEFINE_RATELIMIT_STATE(dma_ratelimit, HZ, 16);
+	struct fastrpc_session_ctx *session = ctx->fl->sctx;
+	struct iommu_domain *domain;
+	phys_addr_t first = 0, last = 0;
+	u64 iova, length;
+
+	if (!diag_dma || ctx->fl->cid != ADSP_DOMAIN_ID || !ctx->buf || !session ||
+	    ctx->handle > FASTRPC_STATIC_HANDLE_LISTENER ||
+	    !__ratelimit(&dma_ratelimit))
+		return;
+	iova = ctx->buf->phys - ((u64)session->smmu.cb << 32);
+	length = buf_page_size(ctx->used);
+	domain = iommu_get_domain_for_dev(session->smmu.dev);
+	if (domain && (domain->type == IOMMU_DOMAIN_DMA ||
+		       domain->type == IOMMU_DOMAIN_DMA_FQ) && length &&
+	    length <= PAGE_ALIGN(ctx->buf->size) && iova <= U64_MAX - length) {
+		first = iommu_iova_to_phys(domain, iova);
+		last = iommu_iova_to_phys(domain, iova + length - 1);
+	}
+	pr_info("FASTRPC DMA t=%llums ctx=%#llx cb=%u domain=%d handle=%#x sc=%#x iova=%#llx\n",
+		ktime_to_ms(ktime_get_boottime()), ctx->msg.invoke.header.ctx,
+		session->smmu.cb, domain ? domain->type : -1,
+		ctx->handle, ctx->sc, iova);
+	pr_info("FASTRPC MAP ctx=%#llx bytes=%llu alloc=%zu attr=%#lx pa=%pa..%pa\n",
+		ctx->msg.invoke.header.ctx, length, ctx->buf->size,
+		ctx->buf->dma_attr, &first, &last);
+}
+
 static int fastrpc_invoke_send(struct smq_invoke_ctx *ctx,
 			       uint32_t kernel, uint32_t handle)
 {
@@ -3110,6 +3155,7 @@ static int fastrpc_invoke_send(struct smq_invoke_ctx *ctx,
 	}
 	mutex_unlock(&channel_ctx->smd_mutex);
 
+	fastrpc_diag_dma(ctx);
 	xo_time_in_us = CONVERT_CNT_TO_US(__arch_counter_get_cntvct());
 	if (isasync) {
 		/*
@@ -4728,7 +4774,9 @@ int fastrpc_get_info_from_dsp(struct fastrpc_file *fl,
 				uint32_t dsp_attr_buf_len,
 				uint32_t domain)
 {
+	static DEFINE_RATELIMIT_STATE(info_ratelimit, 5 * HZ, 1);
 	int err = 0;
+	const char *stage = "channel-open";
 	struct fastrpc_ioctl_invoke_async ioctl;
 	remote_arg_t ra[2];
 
@@ -4756,12 +4804,12 @@ int fastrpc_get_info_from_dsp(struct fastrpc_file *fl,
 	ioctl.perf_dsp = NULL;
 	ioctl.job = NULL;
 
+	stage = "capability-invoke";
 	err = fastrpc_internal_invoke(fl, FASTRPC_MODE_PARALLEL, KERNEL_MSG_WITH_ZERO_PID, &ioctl);
 bail:
-
-	if (err)
-		ADSPRPC_ERR("could not obtain dsp information, err val %d\n",
-		err);
+	if (err && __ratelimit(&info_ratelimit))
+		ADSPRPC_ERR("DSP capability query failed domain=%u cid=%d stage=%s err=%d\n",
+			domain, fl->cid, stage, err);
 	return err;
 }
 
@@ -5808,6 +5856,18 @@ static int fastrpc_session_alloc_locked(struct fastrpc_channel_ctx *chan,
 			}
 		}
 		if (idx >= chan->sesscount) {
+			unsigned int matching = 0;
+
+			for (idx = 0; idx < chan->sesscount; ++idx) {
+				if (chan->session[idx].smmu.secure == secure &&
+					chan->session[idx].smmu.sharedcb == sharedcb &&
+					(pd_type == DEFAULT_UNUSED ||
+					 chan->session[idx].smmu.pd_type == pd_type))
+					matching++;
+			}
+			pr_err_ratelimited("adsprpc: FastRPC DIAG session unavailable subsystem=%s secure=%d shared=%d pd=%d total=%u matching=%u\n",
+				chan->subsys, secure, sharedcb, pd_type,
+				chan->sesscount, matching);
 			err = -EUSERS;
 			goto bail;
 		}
@@ -6459,6 +6519,7 @@ static const struct file_operations debugfs_fops = {
 
 static int fastrpc_channel_open(struct fastrpc_file *fl, uint32_t flags)
 {
+	static DEFINE_RATELIMIT_STATE(ssr_ratelimit, 5 * HZ, 1);
 	struct fastrpc_apps *me = &gfa;
 	int cid = -1, err = 0;
 
@@ -6485,6 +6546,12 @@ static int fastrpc_channel_open(struct fastrpc_file *fl, uint32_t flags)
 	if (me->channel[cid].ssrcount !=
 				 me->channel[cid].prevssrcount) {
 		if (me->channel[cid].subsystemstate != SUBSYSTEM_UP) {
+			if (__ratelimit(&ssr_ratelimit))
+				ADSPRPC_ERR("channel refused cid=%d subsystem=%s state=%d ssr=%u previous=%u\n",
+					cid, me->channel[cid].subsys,
+					me->channel[cid].subsystemstate,
+					me->channel[cid].ssrcount,
+					me->channel[cid].prevssrcount);
 			err = -ECONNREFUSED;
 			mutex_unlock(&me->channel[cid].smd_mutex);
 			goto bail;
@@ -6670,7 +6737,7 @@ static int fastrpc_set_process_info(struct fastrpc_file *fl, uint32_t cid)
 		err = -EUSERS;
 		goto bail;
 	}
-	ADSPRPC_INFO("HLOS pid %d, cid %d is mapped to unique sessions pid %d",
+	ADSPRPC_DEBUG("HLOS pid %d, cid %d is mapped to unique sessions pid %d\n",
 			fl->tgid, cid, fl->tgid_frpc);
 
 	/*
@@ -7532,7 +7599,7 @@ void get_session_info(struct fastrpc_apps *me, struct fastrpc_sessions *sessions
 	int i = 0;
 	struct fastrpc_session_info *session;
 
-	pr_info("ABHI_DBG: %s called cid %d", __func__, cid);
+	ADSPRPC_DEBUG("session query cid=%d\n", cid);
 	spin_lock_irqsave(&me->hlock, irq_flags);
 	hlist_for_each_entry_safe(fl, n, &me->drivers, hn) {
 		if (fl->cid != cid)
@@ -7540,7 +7607,7 @@ void get_session_info(struct fastrpc_apps *me, struct fastrpc_sessions *sessions
 		if (i >= sessions->session_count)
 			break;
 		session = &sessions->sessions[i];
-		session->refcount = atomic_long_read(&fl->filp->f_count);
+		session->refcount = file_count(fl->filp);
 		session->tgid = fl->tgid;
 		session->tgid_frpc = fl->tgid_frpc;
 		session->sessionid = fl->sessionid;
@@ -7550,7 +7617,7 @@ void get_session_info(struct fastrpc_apps *me, struct fastrpc_sessions *sessions
 		session->pending_ctx_count = count_hlist_entries(&fl->clst.pending);
 		session->interrupted_ctx_count = count_hlist_entries(&fl->clst.interrupted);
 		i++;
-		pr_info("ABHI_DBG: %s called i %d name %s", __func__, i, fl->name);
+		ADSPRPC_DEBUG("session index=%d name=%.*s\n", i, TASK_COMM_LEN, fl->name);
 	}
 	sessions->session_count = i;
 	spin_unlock_irqrestore(&me->hlock, irq_flags);
@@ -7560,7 +7627,7 @@ static int fastrpc_get_sessions(struct fastrpc_file *fl, void __user *argp) {
 	struct fastrpc_sessions sessions = {0};
 	int err = 0;
 
-	pr_info("ABHI_DBG: %s called", __func__);
+	ADSPRPC_DEBUG("session query\n");
 	if (copy_from_user(&sessions, argp, sizeof(sessions)))
  		return -EFAULT;
 	VERIFY(err, VALID_FASTRPC_CID(sessions.cid));
@@ -8055,6 +8122,69 @@ void fastrpc_restart_drivers(int cid)
 	mutex_unlock(&me->channel[cid].smd_mutex);
 }
 
+static int fastrpc_adsp_fatal_notifier(struct notifier_block *nb,
+				     unsigned long code, void *data)
+{
+	struct fastrpc_channel_ctx *chan = &gfa.channel[ADSP_DOMAIN_ID];
+	struct fastrpc_tx_msg tx[4];
+	struct fastrpc_rx_msg rx[4];
+	unsigned long flags;
+	unsigned int index, tx_next, rx_next;
+
+	if (code != QCOM_SSR_BEFORE_SHUTDOWN)
+		return NOTIFY_DONE;
+	if (!spin_trylock_irqsave(&chan->gmsg_log.lock, flags)) {
+		pr_err("FASTRPC DIAG ADSP history busy at fatal\n");
+		return NOTIFY_DONE;
+	}
+	tx_next = chan->gmsg_log.tx_index;
+	rx_next = chan->gmsg_log.rx_index;
+	for (index = 0; index < ARRAY_SIZE(tx); index++) {
+		tx[index] = chan->gmsg_log.tx_msgs[
+			(tx_next + GLINK_MSG_HISTORY_LEN - ARRAY_SIZE(tx) + index) %
+			GLINK_MSG_HISTORY_LEN];
+		rx[index] = chan->gmsg_log.rx_msgs[
+			(rx_next + GLINK_MSG_HISTORY_LEN - ARRAY_SIZE(rx) + index) %
+			GLINK_MSG_HISTORY_LEN];
+	}
+	spin_unlock_irqrestore(&chan->gmsg_log.lock, flags);
+
+	pr_err("FASTRPC DIAG ADSP tx_next=%u rx_next=%u sessions=%llu\n",
+		tx_next, rx_next, READ_ONCE(chan->sesscount));
+	for (index = 0; index < ARRAY_SIZE(tx); index++) {
+		const struct fastrpc_tx_msg *sent = &tx[index];
+		const struct fastrpc_rx_msg *received = &rx[index];
+
+		if (sent->ns)
+			pr_err("FASTRPC DIAG tx ns=%lld pid=%u tid=%u ctx=%#llx handle=%#x sc=%#x dma=%#llx size=%llu ret=%d\n",
+				sent->ns, sent->msg.pid, sent->msg.tid,
+				sent->msg.invoke.header.ctx, sent->msg.invoke.header.handle,
+				sent->msg.invoke.header.sc, sent->msg.invoke.page.addr,
+				sent->msg.invoke.page.size, sent->transport_send_err);
+		if (received->ns)
+			pr_err("FASTRPC DIAG rx ns=%lld ctx=%#llx ret=%d hex=%#x flags=%u\n",
+				received->ns, received->rsp.ctx, received->rsp.retval,
+				(unsigned int)received->rsp.retval,
+				received->rsp.flags);
+	}
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block fastrpc_adsp_fatal_nb = {
+	.notifier_call = fastrpc_adsp_fatal_notifier,
+	.priority = 100,
+};
+
+static void *fastrpc_adsp_fatal_handle;
+
+static void fastrpc_unregister_adsp_fatal(void)
+{
+	if (!IS_ERR_OR_NULL(fastrpc_adsp_fatal_handle))
+		qcom_unregister_early_ssr_notifier(fastrpc_adsp_fatal_handle,
+						 &fastrpc_adsp_fatal_nb);
+	fastrpc_adsp_fatal_handle = NULL;
+}
+
 static int fastrpc_restart_notifier_cb(struct notifier_block *nb,
 					unsigned long code,
 					void *data)
@@ -8351,7 +8481,7 @@ static int fastrpc_cb_probe(struct device *dev)
 		}
 		/* Map the allocated memory with fixed IOVA and is shared to remote subsystem */
 		err = iommu_map_sg(domain, frpc_gen_addr_pool[0], sgt.sgl,
-					sgt.nents, IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE);
+					sgt.nents, IOMMU_READ | IOMMU_WRITE | IOMMU_CACHE, GFP_KERNEL);
 		if (err < 0) {
 			ADSPRPC_ERR("iommu_map_sg failed with err %d", err);
 			goto iommu_map_bail;
@@ -9286,6 +9416,13 @@ static int __init fastrpc_device_init(void)
 				__func__, gcinfo[i].subsys);
 	}
 
+	fastrpc_adsp_fatal_handle = qcom_register_early_ssr_notifier(
+		gcinfo[ADSP_DOMAIN_ID].subsys, &fastrpc_adsp_fatal_nb);
+	if (IS_ERR_OR_NULL(fastrpc_adsp_fatal_handle))
+		pr_warn("FASTRPC DIAG ADSP early notifier unavailable\n");
+	else
+		pr_info("FASTRPC DIAG ADSP early notifier registered\n");
+
 	err = fastrpc_transport_init();
 	if (err)
 		goto device_create_bail;
@@ -9307,6 +9444,7 @@ static int __init fastrpc_device_init(void)
 
 	return 0;
 device_create_bail:
+	fastrpc_unregister_adsp_fatal();
 	for (i = 0; i < NUM_CHANNELS; i++) {
 		if (me->channel[i].handle)
 			qcom_unregister_ssr_notifier(me->channel[i].handle,
@@ -9339,6 +9477,7 @@ static void __exit fastrpc_device_exit(void)
 	struct fastrpc_apps *me = &gfa;
 	int i;
 
+	fastrpc_unregister_adsp_fatal();
 	fastrpc_file_list_dtor(me);
 	fastrpc_deinit();
 	wakeup_source_unregister(me->wake_source);

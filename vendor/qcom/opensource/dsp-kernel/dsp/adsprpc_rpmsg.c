@@ -5,6 +5,9 @@
 
 #include <linux/rpmsg.h>
 #include <linux/of.h>
+#include <linux/of_platform.h>
+#include <linux/ratelimit.h>
+#include <linux/remoteproc.h>
 #include <linux/module.h>
 #include "fastrpc_trace.h"
 #include <trace/events/rproc_qcom.h>
@@ -21,16 +24,60 @@ struct frpc_transport_session_control {
 
 static struct frpc_transport_session_control rpmsg_session_control[NUM_CHANNELS];
 
+static void fastrpc_report_missing_rpmsg(int cid)
+{
+	static DEFINE_RATELIMIT_STATE(transport_ratelimit, 5 * HZ, 1);
+	struct device_node *loader_node, *rproc_node;
+	struct platform_device *loader_pdev = NULL, *rproc_pdev = NULL;
+	struct rproc *rproc = NULL;
+	int state = -1;
+
+	if (!__ratelimit(&transport_ratelimit))
+		return;
+
+	ADSPRPC_ERR("RPMSG unavailable cid=%d subsystem=%s endpoint_up=%d\n",
+		cid, rpmsg_session_control[cid].subsys,
+		atomic_read(&rpmsg_session_control[cid].is_rpmsg_ch_up));
+	if (cid != ADSP_DOMAIN_ID)
+		return;
+
+	loader_node = of_find_compatible_node(NULL, NULL, "qcom,adsp-loader");
+	rproc_node = of_parse_phandle(loader_node, "qcom,rproc-handle", 0);
+	if (loader_node)
+		loader_pdev = of_find_device_by_node(loader_node);
+	if (rproc_node) {
+		rproc_pdev = of_find_device_by_node(rproc_node);
+		rproc = rproc_get_by_phandle(rproc_node->phandle);
+	}
+	if (rproc)
+		state = READ_ONCE(rproc->state);
+	ADSPRPC_ERR("ADSP provider node=%pOF driver=%s\n",
+		rproc_node, rproc_pdev && device_is_bound(&rproc_pdev->dev) ?
+		dev_driver_string(&rproc_pdev->dev) : "none");
+	ADSPRPC_ERR("ADSP status registered=%d state=%d running=%d power=%d loader_bound=%d\n",
+		!!rproc,
+		state, state == RPROC_RUNNING, rproc ? atomic_read(&rproc->power) : 0,
+		loader_pdev ? device_is_bound(&loader_pdev->dev) : 0);
+	if (rproc)
+		rproc_put(rproc);
+	if (rproc_pdev)
+		put_device(&rproc_pdev->dev);
+	if (loader_pdev)
+		put_device(&loader_pdev->dev);
+	of_node_put(rproc_node);
+	of_node_put(loader_node);
+}
+
 inline int verify_transport_device(int cid, int tvm_remote_domain)
 {
 	int err = 0;
 	struct frpc_transport_session_control *rpmsg_session = &rpmsg_session_control[cid];
 
 	mutex_lock(&rpmsg_session->rpmsg_mutex);
-	VERIFY(err, NULL != rpmsg_session->rpdev);
-	if (err) {
+	if (!rpmsg_session->rpdev) {
 		err = -ENODEV;
 		mutex_unlock(&rpmsg_session->rpmsg_mutex);
+		fastrpc_report_missing_rpmsg(cid);
 		goto bail;
 	}
 	mutex_unlock(&rpmsg_session->rpmsg_mutex);
