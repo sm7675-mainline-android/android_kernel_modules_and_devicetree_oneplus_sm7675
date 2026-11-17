@@ -124,7 +124,8 @@
 #define N_SPI_MINORS 32 /* ... up to 256 */
 #define NETLINK_INIT_SUCCESS 0
 
-#if defined(MTK_PLATFORM) && LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+#if (defined(MTK_PLATFORM) && LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)) || \
+    (defined(USE_PLATFORM_BUS) && LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0))
 #define VOID_REMOVE
 #endif
 
@@ -214,6 +215,8 @@ static int fp_panel_event_notifier_register(struct fp_dev *fp_dev)
         }
         fp_dev->notifier_cookie = cookie;
         pr_err("%s notifier_cookie = %p!\n", __func__, cookie);
+    } else {
+        status = -ENODEV;
     }
     if (0 == status) {
         fp_dev->is_panel_registered = true;
@@ -841,7 +844,7 @@ static int fp_check_panel_dt(struct fp_dev *fp_dev)
     ref_node = of_find_node_by_name(NULL, display_dev_node);
     if (!ref_node) {
         pr_err("DTS node %s missing (fp).\n", display_dev_node);
-        return 0;
+        return -ENODEV;
     } else {
         pr_info("DTS node %s found (fp).\n", display_dev_node);
     }
@@ -849,7 +852,8 @@ static int fp_check_panel_dt(struct fp_dev *fp_dev)
     count = of_count_phandle_with_args(ref_node, panel_prop_nodes, NULL);
     if (count <= 0) {
         pr_err("%s, NOT config %s!\n", __func__, panel_prop_nodes);
-        return 0;
+        of_node_put(ref_node);
+        return -ENODEV;
     }
 
     for (index = 0; index < count; index++) {
@@ -859,11 +863,13 @@ static int fp_check_panel_dt(struct fp_dev *fp_dev)
         if (!IS_ERR(panel)) {
             pr_err("%s, active_panel = %p\n", __func__, panel);
             fp_dev->active_panel = panel;
+            of_node_put(ref_node);
             return 0;
         }
     }
 
     pr_err("%s, NO active panel!\n", __func__);
+    of_node_put(ref_node);
     return PTR_ERR(panel);
 }
 #endif /*CONFIG_DRM_PANEL_NOTIFY*/

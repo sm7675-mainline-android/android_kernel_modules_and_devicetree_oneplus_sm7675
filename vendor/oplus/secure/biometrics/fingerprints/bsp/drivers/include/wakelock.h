@@ -8,6 +8,7 @@
 
 #include <linux/ktime.h>
 #include <linux/device.h>
+#include <linux/pm_wakeup.h>
 
 /* A wake_lock prevents the system from entering suspend or other low power
  * states when active. If the type is set to WAKE_LOCK_SUSPEND, the wake_lock
@@ -20,46 +21,47 @@ enum {
 };
 
 struct wake_lock {
-	struct wakeup_source ws;
+	struct wakeup_source *ws;
 };
 
 static inline void wake_lock_init(struct wake_lock *lock, int type,
 				  const char *name)
 {
 	if (lock) {
-		memset(&lock->ws, 0, sizeof(lock->ws));
-		lock->ws.name = name;
+		lock->ws = wakeup_source_register(NULL, name);
 	}
-	wakeup_source_add(&lock->ws);
 }
 
 static inline void wake_lock_destroy(struct wake_lock *lock)
 {
-	wakeup_source_remove(&lock->ws);
-	if (!lock) {
+	if (!lock || !lock->ws)
 		return;
-	}
-    __pm_relax(&lock->ws);
+	__pm_relax(lock->ws);
+	wakeup_source_unregister(lock->ws);
+	lock->ws = NULL;
 }
 
 static inline void wake_lock(struct wake_lock *lock)
 {
-	__pm_stay_awake(&lock->ws);
+	if (lock && lock->ws)
+		__pm_stay_awake(lock->ws);
 }
 
 static inline void wake_lock_timeout(struct wake_lock *lock, long timeout)
 {
-	__pm_wakeup_event(&lock->ws, jiffies_to_msecs(timeout));
+	if (lock && lock->ws)
+		__pm_wakeup_event(lock->ws, jiffies_to_msecs(timeout));
 }
 
 static inline void wake_unlock(struct wake_lock *lock)
 {
-	__pm_relax(&lock->ws);
+	if (lock && lock->ws)
+		__pm_relax(lock->ws);
 }
 
 static inline int wake_lock_active(struct wake_lock *lock)
 {
-	return lock->ws.active;
+	return lock && lock->ws && lock->ws->active;
 }
 
 #endif
