@@ -190,7 +190,7 @@ static inline bool task_fits_max(struct task_struct *p, int dst_cpu)
 	unsigned long capacity = 0;
 
 #ifdef CONFIG_OPLUS_SYSTEM_KERNEL_QCOM
-	capacity = capacity_orig_of(dst_cpu);
+	capacity = arch_scale_cpu_capacity(dst_cpu);
 #else
 	struct rq *rq = cpu_rq(dst_cpu);
 
@@ -361,9 +361,7 @@ static inline unsigned long task_util(struct task_struct *p)
 
 static inline unsigned long _task_util_est(struct task_struct *p)
 {
-	struct util_est ue = READ_ONCE(p->se.avg.util_est);
-
-	return max(ue.ewma, (ue.enqueued & ~UTIL_AVG_UNCHANGED));
+	return READ_ONCE(p->se.avg.util_est) & ~UTIL_AVG_UNCHANGED;
 }
 
 /*
@@ -389,11 +387,11 @@ static unsigned long cpu_util_next(int cpu, struct task_struct *p, int dst_cpu)
 	if (sched_feat(UTIL_EST)) {
 		unsigned long util_est;
 
-		util_est = READ_ONCE(cfs_rq->avg.util_est.enqueued);
+		util_est = READ_ONCE(cfs_rq->avg.util_est);
 
 		/*
 		 * During wake-up @p isn't enqueued yet and doesn't contribute
-		 * to any cpu_rq(cpu)->cfs.avg.util_est.enqueued.
+		 * to any cpu_rq(cpu)->cfs.avg.util_est.
 		 * If @dst_cpu == @cpu add it to "simulate" cpu_util after @p
 		 * has been enqueued.
 		 *
@@ -425,7 +423,7 @@ static unsigned long cpu_util_next(int cpu, struct task_struct *p, int dst_cpu)
 		util = max(util, util_est);
 	}
 
-	return min(util, capacity_orig_of(cpu));
+	return min(util, arch_scale_cpu_capacity(cpu));
 }
 
 
@@ -445,7 +443,7 @@ static unsigned long cpu_util_without(int cpu, struct task_struct *p)
 static inline unsigned long oplus_capacity_spare_of(int cpu, struct task_struct *p)
 {
 #ifdef CONFIG_OPLUS_SYSTEM_KERNEL_QCOM
-	return max_t(long, capacity_orig_of(cpu) - cpu_util_without(cpu, p), 0);
+	return max_t(long, arch_scale_cpu_capacity(cpu) - cpu_util_without(cpu, p), 0);
 #else
 	return max_t(long, cpu_rq(cpu)->cpu_capacity - cpu_util_without(cpu, p), 0);
 #endif
@@ -461,9 +459,9 @@ static inline unsigned long cpu_util_cum(int cpu)
 
 	if (sched_feat(UTIL_EST))
 		util = max_t(unsigned long, util,
-					READ_ONCE(cfs_rq->avg.util_est.enqueued));
+					READ_ONCE(cfs_rq->avg.util_est));
 
-	return min_t(unsigned long, util, capacity_orig_of(cpu));
+	return min_t(unsigned long, util, arch_scale_cpu_capacity(cpu));
 }
 
 static inline unsigned int get_idle_exit_latency(struct rq *rq)
@@ -758,7 +756,7 @@ int is_audio_scene(void)
 	return save_audio_tgid > 0;
 }
 
-extern void set_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *se);
+extern void set_next_entity(struct cfs_rq *cfs_rq, struct sched_entity *se, bool first);
 void oplus_replace_next_task_fair(struct rq *rq, struct task_struct **p, struct sched_entity **se, bool *repick, bool simple)
 {
 	struct oplus_rq *orq = get_oplus_rq(rq);
@@ -1177,8 +1175,7 @@ void android_rvh_place_entity_handler(void *unused, struct cfs_rq *cfs_rq, struc
 	if (initial)
 		return;
 
-	if (sched_feat(GENTLE_FAIR_SLEEPERS))
-		thresh >>= 2;
+	thresh >>= 2;
 
 	*vruntime += thresh;
 #endif
@@ -1272,7 +1269,7 @@ void android_rvh_dequeue_entity_handler(void *unused, struct cfs_rq *cfs, struct
 }
 
 void android_rvh_check_preempt_wakeup_handler(void *unused, struct rq *rq, struct task_struct *p, bool *preempt, bool *nopreempt,
-	int wake_flags, struct sched_entity *se, struct sched_entity *pse, int next_buddy_marked, unsigned int granularity)
+	int wake_flags, struct sched_entity *se, struct sched_entity *pse)
 {
 	oplus_check_preempt_wakeup(rq, p, preempt, nopreempt);
 }
@@ -1285,8 +1282,13 @@ void android_rvh_post_init_entity_util_avg_handler(void *unused, struct sched_en
 #endif
 
 void android_rvh_replace_next_task_fair_handler(void *unused,
-		struct rq *rq, struct task_struct **p, struct sched_entity **se, bool *repick, bool simple, struct task_struct *prev)
+		struct rq *rq, struct task_struct **p, struct task_struct *prev)
 {
+	struct sched_entity *selected_se = NULL;
+	struct sched_entity **se = &selected_se;
+	bool selected = false;
+	bool *repick = &selected;
+	bool simple = false;
 	oplus_replace_next_task_fair(rq, p, se, repick, simple);
 #ifdef CONFIG_LOCKING_PROTECT
 	if (*repick != true)
@@ -1310,7 +1312,7 @@ void android_rvh_replace_next_task_fair_handler(void *unused,
 	if (simple && true == *repick) {
 		for_each_sched_entity((*se)) {
 			struct cfs_rq *cfs_rq = cfs_rq_of(*se);
-			set_next_entity(cfs_rq, *se);
+			set_next_entity(cfs_rq, *se, false);
 		}
 	}
 }

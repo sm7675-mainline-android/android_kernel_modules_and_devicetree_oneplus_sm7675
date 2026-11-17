@@ -658,7 +658,7 @@ bool pick_next_ux_exec(struct oplus_task_struct *ots, u64 pre_exec_time, int *ne
 	return ux_type_switched;
 }
 
-void android_vh_sched_stat_runtime_handler(void *unused, struct task_struct *task, u64 delta_exec, u64 vruntime)
+void android_vh_sched_stat_runtime_handler(void *unused, struct task_struct *task, u64 runtime)
 {
 	struct rq *rq;
 	struct oplus_rq *orq;
@@ -681,8 +681,8 @@ void android_vh_sched_stat_runtime_handler(void *unused, struct task_struct *tas
 		struct sched_entity *se = &task->se;
 
 		pre_exec_time = ots->total_exec;
-		ots->total_exec += delta_exec;
-		ots->vruntime += calc_delta_fair(delta_exec, ots->ux_priority);
+		ots->total_exec += runtime;
+		ots->vruntime += calc_delta_fair(runtime, ots->ux_priority);
 
 		if (is_multiple_ux(ots)) {
 			bool switched = pick_next_ux_exec(ots, pre_exec_time, &next_ux_type);
@@ -737,7 +737,7 @@ inline void save_task_vruntime_delta(struct task_struct *task, struct oplus_task
 
 		/* if task migrated, don't calculate delta again */
 		if (ots->cfs_delta < 0) {
-			min_vruntime = task->se.cfs_rq->min_vruntime;
+			min_vruntime = avg_vruntime(task->se.cfs_rq);
 			vruntime = task->se.vruntime;
 			ots->cfs_delta = (s64)(vruntime - min_vruntime);
 			if (ots->cfs_delta < 0) {
@@ -758,7 +758,7 @@ inline void make_up_task_vruntime(struct task_struct *task, struct oplus_task_st
 	if (ots->ux_state & SA_TYPE_SWIFT) {
 		if (ots->cfs_delta >= 0) {
 			/* restore task's vruntime delta to original, steal exec time for this task */
-			task->se.vruntime = task->se.cfs_rq->min_vruntime + ots->cfs_delta;
+			task->se.vruntime = avg_vruntime(task->se.cfs_rq) + ots->cfs_delta;
 		}
 	}
 

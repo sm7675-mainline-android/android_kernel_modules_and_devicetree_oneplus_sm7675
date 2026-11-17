@@ -736,7 +736,7 @@ bool is_min_cluster(int cpu);
 bool is_max_cluster(int cpu);
 bool is_mid_cluster(int cpu);
 bool im_mali(const char *comm);
-bool task_is_runnable(struct task_struct *task);
+bool oplus_task_is_runnable(struct task_struct *task);
 struct oplus_rq *get_oplus_rq(struct rq *rq);
 
 #if IS_ENABLED(CONFIG_OPLUS_FEATURE_LOADBALANCE)
@@ -790,13 +790,13 @@ void android_vh_build_sched_domains_handler(void *unused, bool has_asym);
 
 /* register vender hook in kernel/sched/rt.c */
 void android_rvh_select_task_rq_rt_handler(void *unused, struct task_struct *p, int prev_cpu, int sd_flag, int wake_flags, int *new_cpu);
-void android_rvh_find_lowest_rq_handler(void *unused, struct task_struct *p, struct cpumask *local_cpu_mask, int ret, int *best_cpu);
+void android_rvh_find_lowest_rq_handler(void *unused, struct task_struct *sched_ctx, struct task_struct *exec_ctx, struct cpumask *local_cpu_mask, int ret, int *best_cpu);
 
 /* register vender hook in kernel/sched/core.c */
 void android_rvh_sched_fork_handler(void *unused, struct task_struct *p);
 void android_rvh_after_enqueue_task_handler(void *unused, struct rq *rq, struct task_struct *p, int flags);
 void android_rvh_dequeue_task_handler(void *unused, struct rq *rq, struct task_struct *p, int flags);
-void android_rvh_schedule_handler(void *unused, unsigned int sched_mode, struct task_struct *prev, struct task_struct *next, struct rq *rq);
+void android_rvh_schedule_handler(void *unused, struct task_struct *prev, struct task_struct *next, struct rq *rq);
 void android_vh_scheduler_tick_handler(void *unused, struct rq *rq);
 
 #ifdef CONFIG_OPLUS_FEATURE_TICK_GRAN
@@ -816,7 +816,7 @@ void android_rvh_cpu_cgroup_online_handler(void *unused, struct cgroup_subsys_st
 void android_rvh_set_cpus_allowed_comm_handler(void *unused, struct task_struct *task, const struct cpumask *new_mask);
 void android_rvh_set_cpus_allowed_by_task_handler(void *unused, const struct cpumask *cpu_valid_mask, const struct cpumask *new_mask,
 				struct task_struct *p, unsigned int *dest_cpu);
-void android_vh_reweight_entity_handler(void *unused, struct sched_entity *se);
+void android_vh_reweight_entity_handler(void *unused, struct sched_entity *se, unsigned long *weight);
 #if IS_ENABLED(CONFIG_OPLUS_FEATURE_BAN_APP_SET_AFFINITY)
 void android_vh_sched_setaffinity_early_handler(void *unused, struct task_struct *task, const struct cpumask *new_mask, bool *skip);
 #endif

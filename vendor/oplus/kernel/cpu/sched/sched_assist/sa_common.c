@@ -390,7 +390,7 @@ void update_ux_sched_cputopo(void)
 }
 EXPORT_SYMBOL(update_ux_sched_cputopo);
 
-bool task_is_runnable(struct task_struct *task)
+bool oplus_task_is_runnable(struct task_struct *task)
 {
 	if (!task)
 		return false;
@@ -775,7 +775,7 @@ void sched_info_systrace_c(unsigned int cpu, struct task_struct *p)
 	struct rq *rq = cpu_rq(cpu);
 	struct cfs_rq *cfs_rq = &rq->cfs;
 	struct rt_rq *rt_rq = &rq->rt;
-	unsigned int cfs_running = cfs_rq->h_nr_running;
+	unsigned int cfs_running = cfs_rq->h_nr_runnable;
 	unsigned int rt_running = rt_rq->rt_nr_running;
 	struct oplus_task_struct *ots = get_oplus_task_struct(p);
 	int ddl_hint = ots && test_bit(OTS_STATE_DDL_ACTIVE, &ots->state) ? 1 : 0;
@@ -993,7 +993,7 @@ static inline bool oplus_is_min_capacity_cpu(int cpu)
 	if (unlikely(cls_nr <= 0))
 		return false;
 
-	return capacity_orig_of(cpu) <= ux_cputopo.sched_cls[0].capacity;
+	return arch_scale_cpu_capacity(cpu) <= ux_cputopo.sched_cls[0].capacity;
 }
 
 bool oplus_task_misfit(struct task_struct *tsk, int cpu)
@@ -1766,8 +1766,11 @@ void android_rvh_select_task_rq_rt_handler(void *unused,
 }
 
 void android_rvh_find_lowest_rq_handler(void *unused,
-			struct task_struct *p, struct cpumask *local_cpu_mask, int ret, int *best_cpu)
+			struct task_struct *sched_ctx, struct task_struct *exec_ctx,
+			struct cpumask *local_cpu_mask, int ret, int *best_cpu)
 {
+	struct task_struct *p = exec_ctx ? exec_ctx : sched_ctx;
+
 	adjust_rt_lowest_mask(p, local_cpu_mask, ret, true);
 
 	if (!ret || !local_cpu_mask)
@@ -1861,7 +1864,7 @@ void sa_sched_switch_handler(void *unused, bool preempt, struct task_struct *pre
 }
 #endif
 
-void android_rvh_schedule_handler(void *unused, unsigned int sched_mode, struct task_struct *prev, struct task_struct *next, struct rq *rq)
+void android_rvh_schedule_handler(void *unused, struct task_struct *prev, struct task_struct *next, struct rq *rq)
 {
 #if IS_ENABLED(CONFIG_OPLUS_FEATURE_CPU_JANKINFO)
 	jankinfo_android_rvh_schedule_handler(unused, prev, next, rq);
@@ -2056,13 +2059,7 @@ void android_vh_sched_setaffinity_early_handler(void *unused, struct task_struct
 #endif
 
 #if IS_ENABLED(CONFIG_OPLUS_SCHED_GROUP_OPT)
-static inline void update_load_set(struct load_weight *lw, unsigned long w)
-{
-	lw->weight = w;
-	lw->inv_weight = 0;
-}
-
-void android_vh_reweight_entity_handler(void *unused, struct sched_entity *se)
+void android_vh_reweight_entity_handler(void *unused, struct sched_entity *se, unsigned long *weight)
 {
 	if (!(global_sched_group_enabled & 0x1))
 		return;
@@ -2082,14 +2079,14 @@ void android_vh_reweight_entity_handler(void *unused, struct sched_entity *se)
 			return;
 
 		group_weight = clamp(gcfs_rq->load.weight,
-			se->load.weight, scale_load(MAX_SHARES));
-		if (group_weight == se->load.weight)
+			*weight, scale_load(MAX_SHARES));
+		if (group_weight == *weight)
 			return;
 
 		trace_printk("tg[%s] weight[%lu->%lu]\n", oplus_tg->sg_info->tg_name,
-				scale_load_down(se->load.weight), scale_load_down(group_weight));
+				scale_load_down(*weight), scale_load_down(group_weight));
 
-		update_load_set(&se->load, group_weight);
+		*weight = group_weight;
 	}
 }
 #endif

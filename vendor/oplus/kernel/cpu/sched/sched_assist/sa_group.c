@@ -14,11 +14,6 @@ LIST_HEAD(css_tg_map_list);
 
 int bg_cgrp, lbg_cgrp, hbg_cgrp, fg_cgrp, fgwd_cgrp, ta_cgrp;
 
-static struct task_group *css_tg(struct cgroup_subsys_state *css)
-{
-	return css ? container_of(css, struct task_group, css) : NULL;
-}
-
 static inline int task_cpu_cgroup(struct task_struct *p)
 {
 	if (IS_ERR_OR_NULL(p))

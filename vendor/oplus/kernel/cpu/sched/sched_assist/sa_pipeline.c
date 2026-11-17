@@ -726,7 +726,7 @@ static inline void pipeline_set_boost(bool boost)
 {
 	int i, j, cpu;
 	struct cpumask pipeline_cpu_mask;
-	struct cpufreq_policy policy;
+	struct cpufreq_policy *policy;
 	struct cpu_topology *cpu_topo;
 
 	if (oplus_core_ctl_set_boost != NULL) {
@@ -739,21 +739,25 @@ static inline void pipeline_set_boost(bool boost)
 
 	if (oplus_core_ctl_set_cluster_boost != NULL) {
 		for_each_cpu(i, &pipeline_cpu_mask) {
-			if (cpufreq_get_policy(&policy, i))
+			policy = cpufreq_cpu_get(i);
+			if (!policy)
 				continue;
 
-			for_each_cpu(j, policy.related_cpus)
+			for_each_cpu(j, policy->related_cpus)
 				cpumask_clear_cpu(j, &pipeline_cpu_mask);
 
-			cpu = policy.cpu;
+			cpu = policy->cpu;
 
 			cpu_topo = &cpu_topology[cpu];
-			if (cpu_topo->cluster_id == -1)
+			if (cpu_topo->cluster_id == -1) {
+				cpufreq_cpu_put(policy);
 				continue;
+			}
 
 			oplus_core_ctl_set_cluster_boost(cpu_topo->cluster_id, boost);
 			printk("oplus_core_ctl_set_cluster_boost, cluster_id=%d, boost=%d\n",
 				cpu_topo->cluster_id, boost);
+			cpufreq_cpu_put(policy);
 		}
 	}
 }
@@ -763,9 +767,10 @@ static inline void check_prime_cpu_num(void)
 	static bool checked = false;
 
 	if (unlikely(!checked)) {
-		struct cpufreq_policy policy;
-		if (!cpufreq_get_policy(&policy, nr_cpu_ids - 1)) {
-			prime_cpu_num = nr_cpu_ids - policy.cpu;
+		struct cpufreq_policy *policy = cpufreq_cpu_get(nr_cpu_ids - 1);
+		if (policy) {
+			prime_cpu_num = nr_cpu_ids - policy->cpu;
+			cpufreq_cpu_put(policy);
 		}
 		checked = true;
 	}

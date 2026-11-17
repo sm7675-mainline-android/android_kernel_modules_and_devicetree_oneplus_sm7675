@@ -109,7 +109,7 @@ static int register_scheduler_vendor_hooks(void)
 	REGISTER_TRACE_RVH(android_rvh_dequeue_entity, android_rvh_dequeue_entity_handler);
 
 #ifndef CONFIG_OPLUS_SYSTEM_KERNEL_QCOM
-	REGISTER_TRACE_RVH(android_rvh_check_preempt_wakeup, android_rvh_check_preempt_wakeup_handler);
+	REGISTER_TRACE_RVH(android_rvh_check_preempt_wakeup_fair, android_rvh_check_preempt_wakeup_handler);
 #ifndef CONFIG_MTK_SCHED_VIP_TASK
 	REGISTER_TRACE_RVH(android_rvh_replace_next_task_fair, android_rvh_replace_next_task_fair_handler);
 #endif

@@ -82,12 +82,11 @@ void android_rvh_check_preempt_tick_handler(void *unused, struct task_struct *ta
 			unsigned long delta_exec, struct cfs_rq *cfs_rq,
 			struct sched_entity *se, unsigned int granularity);
 void android_rvh_check_preempt_wakeup_handler(void *unused, struct rq *rq, struct task_struct *p, bool *preempt, bool *nopreempt,
-	int wake_flags, struct sched_entity *se, struct sched_entity *pse, int next_buddy_marked, unsigned int granularity);
+	int wake_flags, struct sched_entity *se, struct sched_entity *pse);
 #ifndef CONFIG_OPLUS_SYSTEM_KERNEL_QCOM
 void android_rvh_post_init_entity_util_avg_handler(void *unused, struct sched_entity *se);
 #endif
-void android_rvh_replace_next_task_fair_handler(void *unused, struct rq *rq, struct task_struct **p, struct sched_entity **se,
-	bool *repick, bool simple, struct task_struct *prev);
+void android_rvh_replace_next_task_fair_handler(void *unused, struct rq *rq, struct task_struct **p, struct task_struct *prev);
 void android_rvh_can_migrate_task_handler(void *unused, struct task_struct *p, int dst_cpu, int *can_migrate);
 void android_rvh_enqueue_entity_handler(void *unused, struct cfs_rq *cfs, struct sched_entity *se);
 void android_rvh_dequeue_entity_handler(void *unused, struct cfs_rq *cfs, struct sched_entity *se);

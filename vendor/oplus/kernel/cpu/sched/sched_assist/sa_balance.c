@@ -485,7 +485,7 @@ static inline int migrate_degrades_locality(struct task_struct *p,
 }
 #endif
 
-const_debug unsigned int sysctl_sched_migration_cost	= 500000UL;
+unsigned int sysctl_sched_migration_cost	= 500000UL;
 
 /*
  * Is this task likely cache-hot:
@@ -518,8 +518,7 @@ __maybe_unused static int task_hot(struct task_struct *p, struct lb_env *env)
 	 * Buddy candidates are cache hot:
 	 */
 	if (sched_feat(CACHE_HOT_BUDDY) && env->dst_rq->nr_running &&
-			(&p->se == cfs_rq_of(&p->se)->next ||
-			 &p->se == cfs_rq_of(&p->se)->last))
+			(&p->se == cfs_rq_of(&p->se)->next))
 		return 1;
 
 	if (sysctl_sched_migration_cost == -1)
@@ -747,28 +746,11 @@ __maybe_unused static struct task_struct *detach_one_task(struct lb_env *env)
 /*
  * attach_task() -- attach the task detached by detach_task() to its new rq.
  */
-static void attach_task(struct rq *rq, struct task_struct *p)
-{
-	lockdep_assert_rq_held(rq);
-
-	WARN_ON(task_rq(p) != rq);
-	activate_task(rq, p, ENQUEUE_NOCLOCK);
-	check_preempt_curr(rq, p, 0);
-}
 
 /*
  * attach_one_task() -- attaches the task returned from detach_one_task() to
  * its new rq.
  */
-static void attach_one_task(struct rq *rq, struct task_struct *p)
-{
-	struct rq_flags rf;
-
-	rq_lock(rq, &rf);
-	update_rq_clock(rq);
-	attach_task(rq, p);
-	rq_unlock(rq, &rf);
-}
 
 /******** The above code is copied from fair.c ********/
 
@@ -1960,7 +1942,7 @@ static struct task_struct *oplus_pick_runnable_ux(
 			continue;
 
 		/* pick a task in runnable state. */
-		if (!task_is_runnable(task))
+		if (!oplus_task_is_runnable(task))
 			continue;
 
 		/* Determine whether the runnable time has exceeded the threshold. */
@@ -2876,9 +2858,9 @@ inline unsigned long cpu_util(int cpu)
 	util = READ_ONCE(cfs_rq->avg.util_avg);
 
 	if (sched_feat(UTIL_EST))
-		util = max(util, READ_ONCE(cfs_rq->avg.util_est.enqueued));
+		util = max(util, READ_ONCE(cfs_rq->avg.util_est));
 
-	return min_t(unsigned long, util, capacity_orig_of(cpu));
+	return min_t(unsigned long, util, arch_scale_cpu_capacity(cpu));
 }
 
 #define fits_capacity(util, max)	((util) * 1280 < (max) * 1024)
@@ -2933,7 +2915,7 @@ static struct task_struct *oplus_pick_runnable_rt_boost(
 		 * It is possible that tasks in the rt_boost group are not
 		 * on the runqueue and have entered a blocked state.
 		 */
-		if (!task_is_runnable(task))
+		if (!oplus_task_is_runnable(task))
 			continue;
 
 		/*
@@ -3526,13 +3508,13 @@ out:
 	 * the runnable state and will not get a chance to run for a
 	 * long time.
 	 */
-	if (this_rq->cfs.h_nr_running && !*pulled_task)
+	if (this_rq->cfs.h_nr_runnable && !*pulled_task)
 		*pulled_task = 1;
 
 	/*
 	 * Is there a task of a high priority class?
 	 */
-	if (this_rq->nr_running != this_rq->cfs.h_nr_running)
+	if (this_rq->nr_running != this_rq->cfs.h_nr_runnable)
 		*pulled_task = -1;
 
 	if (*pulled_task)
@@ -3590,7 +3572,7 @@ out:
 	trace_printk("DEBUG_LB_NEWIDLE_HIT[%d]: cpu=%d, pulled_task=%d, "
 		"done=%d, nr_running=%d, h_nr_running=%d\n",
 		__LINE__, this_cpu, *pulled_task, *done,
-		this_rq->nr_running, this_rq->cfs.h_nr_running);
+		this_rq->nr_running, this_rq->cfs.h_nr_runnable);
 #endif
 
 	return ret;
@@ -3617,7 +3599,7 @@ static int oplus_get_cluster_util(int cpu)
 			continue;
 #endif
 		total_util += cpu_util(cpu);
-		total_capacity += capacity_orig_of(cpu);
+		total_capacity += arch_scale_cpu_capacity(cpu);
 	}
 
 	/* in percent format. */
@@ -3725,7 +3707,7 @@ bool __oplus_newidle_balance(void *data, struct rq *this_rq,
 	/*
 	 * no tasks to be pulled.
 	 */
-	if (!READ_ONCE(rd->overload))
+	if (!READ_ONCE(rd->overloaded))
 		return false;
 
 	enough_idle = (this_rq->avg_idle > NEWIDLE_BALANCE_IDLE_THRESHOLD);
@@ -3742,8 +3724,8 @@ bool __oplus_newidle_balance(void *data, struct rq *this_rq,
 			"nr_running=%d, h_nr_running=%d, high_prio=%d "
 			"is_migration=%d\n",
 		__LINE__, this_cpu, this_rq->curr->comm, this_rq->curr->pid,
-		this_rq->nr_running, this_rq->cfs.h_nr_running,
-		this_rq->nr_running != this_rq->cfs.h_nr_running,
+		this_rq->nr_running, this_rq->cfs.h_nr_runnable,
+		this_rq->nr_running != this_rq->cfs.h_nr_runnable,
 		is_migration);
 
 	oplus_loadbalance_systrace_print(OPLUS_LB_SYSTRACE_PID,
@@ -3867,7 +3849,7 @@ void show_trackme_stats(void)
 			tk_array[i].max_runnable_time,
 			curr->comm, curr->pid, is_idle, preempt,
 			test_ti_thread_flag(task_thread_info(curr), TIF_NEED_RESCHED),
-			rq->nr_running, rq->cfs.h_nr_running);
+			rq->nr_running, rq->cfs.h_nr_runnable);
 
 		/*
 		 * No log if the task is in the running/runnable state
@@ -4475,7 +4457,7 @@ static void ut_dump_cpu_state(void)
 			idle?idle->name:"NULL", idle?idle->desc:"NULL",
 			idle?idle->exit_latency:0, cpu_online(i), cpu_active(i),
 			oplus_idle_cpu(i), available_idle_cpu(i),
-			cpu_rq(i)->nr_running, cpu_rq(i)->cfs.h_nr_running);
+			cpu_rq(i)->nr_running, cpu_rq(i)->cfs.h_nr_runnable);
 
 		cpuidle_exit_latency_systrace(i, idle?idle->exit_latency:0);
 	}

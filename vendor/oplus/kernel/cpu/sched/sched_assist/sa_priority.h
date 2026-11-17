@@ -38,7 +38,7 @@ bool need_wakeup_preempt(struct oplus_rq *orq, struct oplus_task_struct *curr);
 
 void save_task_vruntime_delta(struct task_struct *task, struct oplus_task_struct *ots);
 void make_up_task_vruntime(struct task_struct *task, struct oplus_task_struct *ots);
-void android_vh_sched_stat_runtime_handler(void *unused, struct task_struct *task, u64 delta_exec, u64 vruntime);
+void android_vh_sched_stat_runtime_handler(void *unused, struct task_struct *task, u64 runtime);
 bool pick_next_ux_exec(struct oplus_task_struct *ots, u64 pre_exec_time, int *next_type);
 int ux_max_exec_time(int types);
 #endif /* _OPLUS_SA_PRIORITY_H_ */

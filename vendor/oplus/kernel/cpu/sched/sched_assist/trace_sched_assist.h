@@ -92,9 +92,7 @@ DEFINE_EVENT(inherit_ux_template, inherit_ux_unset,
 #endif /*_TRACE_SCHED_ASSIST_H */
 
 #undef TRACE_INCLUDE_PATH
-#ifdef CONFIG_OPLUS_SYSTEM_KERNEL_QCOM
 #define TRACE_INCLUDE_PATH .
-#endif
 
 #undef TRACE_INCLUDE_FILE
 #define TRACE_INCLUDE_FILE trace_sched_assist
