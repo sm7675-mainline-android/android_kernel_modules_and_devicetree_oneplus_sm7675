@@ -817,7 +817,9 @@ int wlfw_cap_send_sync_msg(struct icnss_priv *priv)
 		priv->cpr_info.voltage = resp->voltage_mv;
 		icnss_pr_dbg("Voltage for CPR: %dmV\n",
 			    priv->cpr_info.voltage);
-		icnss_update_cpr_info(priv);
+		ret = icnss_update_cpr_info(priv);
+		if (ret)
+			goto out;
 	}
 
 	if (resp->fw_build_id_valid)
@@ -3566,6 +3568,10 @@ int wlfw_host_cap_send_sync(struct icnss_priv *priv)
 		icnss_pr_dbg("Sending msa starting 0x%llx with size 0x%llx\n",
 			    req->ddr_range[1].start, req->ddr_range[1].size);
 	}
+	icnss_pr_info("WLAN DMA DIAG host-cap valid=%u ddr=%#llx+%#llx msa=%#llx+%#llx\n",
+		      req->ddr_range_valid,
+		      req->ddr_range[0].start, req->ddr_range[0].size,
+		      req->ddr_range[1].start, req->ddr_range[1].size);
 
 	req->host_build_type_valid = 1;
 	req->host_build_type = icnss_get_host_build_type();
@@ -3627,6 +3633,9 @@ int wlfw_host_cap_send_sync(struct icnss_priv *priv)
 
 	req->gpio_info_len = GPIO_TYPE_MAX_V01;
 
+	icnss_pr_info("WPSS host-cap send delay_valid=%u delay_ms=%u ddr_valid=%u ddr_type=%u gpio_valid=%u\n",
+		      req->wlan_enable_delay_valid, req->wlan_enable_delay,
+		      req->ddr_type_valid, req->ddr_type, req->gpio_info_valid);
 	ret = qmi_txn_init(&priv->qmi, &txn,
 			   wlfw_host_cap_resp_msg_v01_ei, resp);
 	if (ret < 0) {
@@ -3660,6 +3669,7 @@ int wlfw_host_cap_send_sync(struct icnss_priv *priv)
 		goto out;
 	}
 
+	icnss_pr_info("WPSS host-cap acknowledged\n");
 	kfree(req);
 	kfree(resp);
 	return 0;

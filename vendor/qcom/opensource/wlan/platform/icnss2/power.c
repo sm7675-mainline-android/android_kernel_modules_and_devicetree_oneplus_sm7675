@@ -13,7 +13,7 @@
 #include "qmi.h"
 #include "debug.h"
 #include "power.h"
-#if IS_ENABLED(CONFIG_MSM_QMP)
+#if IS_ENABLED(CONFIG_MSM_QMP) || IS_ENABLED(CONFIG_QCOM_AOSS_QMP)
 #include <linux/soc/qcom/qcom_aoss.h>
 #endif
 
@@ -750,7 +750,12 @@ void icnss_put_resources(struct icnss_priv *priv)
 }
 
 
-#if IS_ENABLED(CONFIG_MSM_QMP)
+#if IS_ENABLED(CONFIG_MSM_QMP) || IS_ENABLED(CONFIG_QCOM_AOSS_QMP)
+struct icnss_aop_packet {
+	u32 size;
+	void *data;
+};
+
 /**
  * icnss_aop_interface_init: Initialize AOP interface: either mbox channel or direct QMP
  * @priv: Pointer to icnss platform data
@@ -806,6 +811,10 @@ int icnss_aop_interface_init(struct icnss_priv *priv)
 	ret = icnss_aop_pdc_reconfig(priv);
 	if (ret)
 		icnss_pr_err("Failed to reconfig WLAN PDC, err = %d\n", ret);
+	icnss_pr_info("WPSS AOP init transport=%s cpr=%s pdc_entries=%d rc=%d\n",
+		      priv->use_direct_qmp ? "qmp" : "mailbox",
+		      priv->cpr_info.vreg_ol_cpr ?: "none",
+		      priv->pdc_init_table_len, ret);
 
 	return ret;
 }
@@ -834,7 +843,7 @@ static int icnss_aop_set_vreg_param(struct icnss_priv *priv,
 				    enum icnss_vreg_param param,
 				    enum icnss_tcs_seq seq, int val)
 {
-	struct qmp_pkt pkt;
+	struct icnss_aop_packet pkt;
 	char mbox_msg[ICNSS_MBOX_MSG_MAX_LEN];
 	static const char * const vreg_param_str[] = {"v", "m", "e"};
 	static const char *const tcs_seq_str[] = {"upval", "dwnval", "enable"};
@@ -848,7 +857,7 @@ static int icnss_aop_set_vreg_param(struct icnss_priv *priv,
 		 vreg_param_str[param], tcs_seq_str[seq], val);
 	if (priv->use_direct_qmp) {
 		icnss_pr_dbg("Sending AOP QMP msg: %s\n", mbox_msg);
-		ret = qmp_send(priv->qmp, mbox_msg, ICNSS_MBOX_MSG_MAX_LEN);
+		ret = qmp_send(priv->qmp, "%s", mbox_msg);
 		if (ret < 0)
 			icnss_pr_err("Failed to send AOP QMP msg: %s\n", mbox_msg);
 		else
@@ -866,6 +875,8 @@ static int icnss_aop_set_vreg_param(struct icnss_priv *priv,
 			ret = 0;
 	}
 
+	icnss_pr_dbg("WPSS AOP vote res=%s param=%u seq=%u value=%d rc=%d\n",
+		      vreg_name, param, seq, val, ret);
 	return ret;
 }
 
@@ -881,7 +892,7 @@ int icnss_aop_pdc_reconfig(struct icnss_priv *priv)
 	u32 i;
 	int ret;
 	char *mbox_msg;
-	struct qmp_pkt pkt;
+	struct icnss_aop_packet pkt;
 
 	if (priv->pdc_init_table_len <= 0 || !priv->pdc_init_table)
 		return 0;
@@ -892,8 +903,7 @@ int icnss_aop_pdc_reconfig(struct icnss_priv *priv)
 		mbox_msg = (char *)priv->pdc_init_table[i];
 		if (priv->use_direct_qmp) {
 			icnss_pr_dbg("Sending AOP QMP msg: %s\n", mbox_msg);
-			ret = qmp_send(priv->qmp, mbox_msg,
-				       ICNSS_MBOX_MSG_MAX_LEN);
+			ret = qmp_send(priv->qmp, "%s", mbox_msg);
 			if (ret < 0)
 				icnss_pr_err("Failed to send AOP QMP msg: %s\n",
 					     mbox_msg);
@@ -911,6 +921,8 @@ int icnss_aop_pdc_reconfig(struct icnss_priv *priv)
 			else
 				ret = 0;
 		}
+		if (ret)
+			return ret;
 	}
 	return ret;
 }

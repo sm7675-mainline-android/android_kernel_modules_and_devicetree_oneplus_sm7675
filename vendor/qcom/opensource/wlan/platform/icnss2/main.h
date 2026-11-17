@@ -12,9 +12,7 @@
 #include <linux/platform_device.h>
 #include <linux/ipc_logging.h>
 #include <linux/power_supply.h>
-#if IS_ENABLED(CONFIG_MSM_QMP)
-#include <linux/mailbox/qmp.h>
-#endif
+struct qmp;
 #ifdef CONFIG_CNSS_OUT_OF_TREE
 #include "icnss2.h"
 #else
@@ -476,6 +474,7 @@ struct icnss_priv {
 	bool smmu_s1_enable;
 	struct kobject *icnss_kobject;
 	struct rproc *rproc;
+	const char *wpss_boot_stage;
 	atomic_t is_shutdown;
 	u32 qdss_mem_seg_len;
 	struct icnss_fw_mem qdss_mem[QMI_WLFW_MAX_NUM_MEM_SEG_V01];
@@ -497,7 +496,7 @@ struct icnss_priv {
 	bool root_pd_shutdown;
 	struct mbox_client mbox_client_data;
 	struct mbox_chan *mbox_chan;
-#if IS_ENABLED(CONFIG_MSM_QMP)
+#if IS_ENABLED(CONFIG_MSM_QMP) || IS_ENABLED(CONFIG_QCOM_AOSS_QMP)
 	struct qmp *qmp;
 #endif
 	bool use_direct_qmp;

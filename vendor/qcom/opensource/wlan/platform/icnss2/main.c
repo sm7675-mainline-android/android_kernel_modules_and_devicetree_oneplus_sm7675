@@ -948,6 +948,7 @@ static int icnss_driver_event_server_arrive(struct icnss_priv *priv,
 		ICNSS_ASSERT(0);
 	}
 
+	WRITE_ONCE(priv->wpss_boot_stage, "qmi-connect");
 	ret = icnss_connect_to_fw_server(priv, data);
 	if (ret)
 		goto fail;
@@ -960,6 +961,7 @@ static int icnss_driver_event_server_arrive(struct icnss_priv *priv,
 			goto fail;
 	}
 
+	WRITE_ONCE(priv->wpss_boot_stage, "ind-register");
 	ret = wlfw_ind_register_send_sync_msg(priv);
 	if (ret < 0) {
 		if (ret == -EALREADY) {
@@ -991,6 +993,7 @@ static int icnss_driver_event_server_arrive(struct icnss_priv *priv,
 				icnss_set_wlan_en_delay(priv);
 		}
 
+		WRITE_ONCE(priv->wpss_boot_stage, "host-cap");
 		ret = wlfw_host_cap_send_sync(priv);
 		if (ret < 0)
 			goto fail;
@@ -1019,6 +1022,7 @@ static int icnss_driver_event_server_arrive(struct icnss_priv *priv,
 	if (priv->device_id == WCN6450_DEVICE_ID)
 		icnss_hw_power_off(priv);
 
+	WRITE_ONCE(priv->wpss_boot_stage, "target-cap");
 	ret = wlfw_cap_send_sync_msg(priv);
 	if (ret < 0) {
 		ignore_assert = true;
@@ -1035,10 +1039,12 @@ static int icnss_driver_event_server_arrive(struct icnss_priv *priv,
 
 	if (priv->device_id == WCN6750_DEVICE_ID ||
 	    priv->device_id == WCN6450_DEVICE_ID) {
+		WRITE_ONCE(priv->wpss_boot_stage, "power-on");
 		ret = icnss_hw_power_on(priv);
 		if (ret)
 			goto fail;
 
+		WRITE_ONCE(priv->wpss_boot_stage, "device-info");
 		ret = wlfw_device_info_send_msg(priv);
 		if (ret < 0) {
 			ignore_assert = true;
@@ -1070,6 +1076,7 @@ static int icnss_driver_event_server_arrive(struct icnss_priv *priv,
 	}
 
 	if (priv->bdf_download_support) {
+		WRITE_ONCE(priv->wpss_boot_stage, "bdf-download");
 		icnss_wlfw_bdf_dnld_send_sync(priv, ICNSS_BDF_REGDB);
 
 		ret = icnss_wlfw_bdf_dnld_send_sync(priv,
@@ -1117,11 +1124,14 @@ static int icnss_driver_event_server_arrive(struct icnss_priv *priv,
 	if (priv->psf_supported)
 		queue_work(priv->soc_update_wq, &priv->soc_update_work);
 
+	WRITE_ONCE(priv->wpss_boot_stage, "server-ready");
 	return ret;
 
 device_info_failure:
 	icnss_hw_power_off(priv);
 fail:
+	icnss_pr_err("WPSS boot failed stage=%s rc=%d state=%#lx\n",
+		     READ_ONCE(priv->wpss_boot_stage) ?: "none", ret, priv->state);
 	ICNSS_ASSERT(ignore_assert);
 qmi_registered:
 	return ret;
@@ -2247,6 +2257,17 @@ static int icnss_wpss_early_notifier_nb(struct notifier_block *nb,
 		      icnss_qcom_ssr_notify_state_to_str(code), code);
 
 	if (code == QCOM_SSR_BEFORE_SHUTDOWN) {
+		icnss_pr_err("WPSS boot stage=%s ind=%u/%u cap=%u/%u\n",
+			     READ_ONCE(priv->wpss_boot_stage) ?: "none",
+			     READ_ONCE(priv->stats.ind_register_req),
+			     READ_ONCE(priv->stats.ind_register_resp),
+			     READ_ONCE(priv->stats.cap_req),
+			     READ_ONCE(priv->stats.cap_resp));
+		icnss_pr_err("WPSS AOP crash state=%#lx power=%u qmp=%u mailbox=%u cpr=%s voltage_mv=%u cal_done=%u\n",
+			     priv->state, test_bit(ICNSS_POWER_ON, &priv->state),
+			     priv->use_direct_qmp, !!priv->mbox_chan,
+			     priv->cpr_info.vreg_ol_cpr ?: "none",
+			     priv->cpr_info.voltage, priv->cal_done);
 		set_bit(ICNSS_FW_DOWN, &priv->state);
 		icnss_ignore_fw_timeout(true);
 	}
@@ -4185,6 +4206,11 @@ static void icnss_wpss_load(struct work_struct *wpss_load_work)
 		return;
 	}
 
+	icnss_pr_info("WPSS AOP boot state=%#lx qmp=%u mailbox=%u cpr=%s voltage_mv=%u\n",
+		      priv->state, priv->use_direct_qmp, !!priv->mbox_chan,
+		      priv->cpr_info.vreg_ol_cpr ?: "none",
+		      priv->cpr_info.voltage);
+	WRITE_ONCE(priv->wpss_boot_stage, "pas-boot");
 	ret = rproc_boot(priv->rproc);
 	if (ret) {
 		icnss_pr_err("Failed to boot wpss rproc, ret: %d", ret);
@@ -4605,6 +4631,9 @@ static int icnss_smmu_dt_parse(struct icnss_priv *priv)
 
 		priv->iommu_domain =
 			iommu_get_domain_for_dev(&pdev->dev);
+		if (!priv->iommu_domain)
+			return dev_err_probe(dev, -ENODEV,
+					     "WLAN DMA domain unavailable\n");
 
 		ret = of_property_read_string(dev->of_node, "qcom,iommu-dma",
 					      &iommu_dma_type);
@@ -4632,6 +4661,13 @@ static int icnss_smmu_dt_parse(struct icnss_priv *priv)
 				     priv->smmu_iova_ipa_len);
 		}
 	}
+
+	dev_info(dev,
+		 "WLAN DMA DIAG domain=%u s1=%u mask=%#llx coherent=%#llx iova=%pad+%zx ipa=%pad+%zx\n",
+		 priv->iommu_domain ? priv->iommu_domain->type : 0,
+		 priv->smmu_s1_enable, dma_get_mask(dev), dev->coherent_dma_mask,
+		 &priv->smmu_iova_start, priv->smmu_iova_len,
+		 &priv->smmu_iova_ipa_start, priv->smmu_iova_ipa_len);
 
 	return 0;
 }
@@ -5031,7 +5067,9 @@ static int icnss_probe(struct platform_device *pdev)
 
 		init_completion(&priv->smp2p_soc_wake_wait);
 		icnss_runtime_pm_init(priv);
-		icnss_aop_interface_init(priv);
+		ret = icnss_aop_interface_init(priv);
+		if (ret)
+			icnss_pr_err("WPSS AOP interface init failed rc=%d\n", ret);
 		set_bit(ICNSS_COLD_BOOT_CAL, &priv->state);
 		priv->bdf_download_support = true;
 		register_rproc_restart_level_notifier();
