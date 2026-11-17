@@ -177,7 +177,7 @@ static inline ssize_t do_tty_write(
 		cond_resched();
 	}
 	if (written) {
-		tty_update_time(&file_inode(file)->i_mtime);
+		inode_set_mtime_to_ts(file_inode(file), current_time(file_inode(file)));
 		ret = written;
 	}
 out:

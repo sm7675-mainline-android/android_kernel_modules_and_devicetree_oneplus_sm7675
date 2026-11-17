@@ -47,7 +47,7 @@ __attribute__((weak)) void oplus_device_dir_redirect(struct sensor_info * chip)
 	pr_info("%s oplus_device_dir_redirect \n", __func__);
 };
 
-__attribute__((weak)) unsigned int get_serialID(void)
+__attribute__((weak)) unsigned int oplus_sensor_get_serial_id(void)
 {
 	return 0;
 };
@@ -78,7 +78,7 @@ static void is_need_close_pd(struct sensor_hw* hw, struct device_node *ch_node)
 
 
 			for (di = 0; di < sn_size; di++) {
-				if (specific_sn[di] == get_serialID()) {
+				if (specific_sn[di] == oplus_sensor_get_serial_id()) {
 					hw->feature.feature[2] = CLOSE_PD;
 					break;
 				}

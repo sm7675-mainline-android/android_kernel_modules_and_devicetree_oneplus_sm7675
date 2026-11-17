@@ -1484,6 +1484,9 @@ static void report_key_value(struct extcon_dev_data *chip)
 		input_sync(chip->input_dev);
 	} else
 		TRI_KEY_LOG("no report\n");
+	pr_debug("TRIKEY state=%d position=%d suspended=%d listeners=%d\n",
+		chip->state, chip->position, chip->is_suspended,
+		READ_ONCE(chip->input_dev->users));
 }
 
 static int report_calibration_location(struct extcon_dev_data *chip)
@@ -2335,6 +2338,8 @@ static ssize_t proc_tri_state_read(struct file *file, char __user *user_buf,
 			oplus_hall_get_data(DHALL_1);
 		}
 		snprintf(page, 6, "%d\n", g_the_chip->state);
+		pr_debug("TRIKEY reader=%s/%d state=%d\n",
+			current->comm, task_pid_nr(current), g_the_chip->state);
 		if (g_the_chip->health_monitor_support) {
 			key_upload_state = 2;
 			tri_healthinfo_report(&g_the_chip->monitor_data, HEALTH_KEY_UPLOAD_STATE, &key_upload_state);
@@ -2972,6 +2977,8 @@ static void register_tri_key_dev_work(struct work_struct *work)
 		goto fail;
 	}
 	chip->input_dev->name = TRI_KEY_DEVICE;
+	chip->input_dev->phys = "tristatekey/input0";
+	chip->input_dev->id.bustype = BUS_HOST;
 
 	set_bit(EV_SYN, chip->input_dev->evbit);
 	set_bit(EV_KEY, chip->input_dev->evbit);

@@ -2607,5 +2607,5 @@ module_exit(memleak_detect_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("kmalloc vmalloc memleak debugging feature");
-MODULE_IMPORT_NS(MINIDUMP);
+MODULE_IMPORT_NS("MINIDUMP");
 #endif /* _SLUB_TRACK_ */

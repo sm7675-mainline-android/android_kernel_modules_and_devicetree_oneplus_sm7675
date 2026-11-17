@@ -292,7 +292,7 @@ fail_out:
 }
 
 
-static int __exit dump_device_info_remove(struct platform_device *pdev)
+static int dump_device_info_remove(struct platform_device *pdev)
 {
 	return -EBUSY;
 }
@@ -305,7 +305,7 @@ MODULE_DEVICE_TABLE(of, dump_device_info_of_match);
 
 static struct platform_driver dump_device_info_driver = {
 	.probe = dump_device_info_probe,
-	.remove = __exit_p(dump_device_info_remove),
+	.remove = dump_device_info_remove,
 	.driver = {
 		.name = "dump_device_info",
 		.owner = THIS_MODULE,
@@ -333,5 +333,5 @@ EXPORT_SYMBOL(save_dump_reason_to_device_info);
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("leo.liuch");
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)
-MODULE_IMPORT_NS(MINIDUMP);
+MODULE_IMPORT_NS("MINIDUMP");
 #endif
