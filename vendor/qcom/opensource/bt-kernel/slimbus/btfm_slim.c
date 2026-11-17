@@ -98,6 +98,24 @@ int btfm_slim_read(struct btfmslim *btfmslim, uint32_t reg, uint8_t pgd)
 extern int oplus_bt_timeout_status;
 extern int oplus_bt_init_err;
 //#endif /* OPLUS_ARCH_EXTENDS */
+
+/*
+ * slim_stream_unprepare() disconnects and frees the stream ports together.
+ * Defer the disconnect-only call until the final unprepare step.
+ */
+static int btfm_slim_stream_unprepare(struct slim_stream_runtime *stream,
+				      bool disconnect_ports,
+				      bool is_session_completed)
+{
+	if (!stream)
+		return -EINVAL;
+
+	if (disconnect_ports && !is_session_completed)
+		return 0;
+
+	return slim_stream_unprepare(stream);
+}
+
 int btfm_slim_enable_ch(struct btfmslim *btfmslim, struct btfmslim_ch *ch,
 	uint8_t rxport, uint32_t rates, uint8_t nchan)
 {
@@ -204,7 +222,7 @@ int btfm_slim_disable_ch(struct btfmslim *btfmslim, struct btfmslim_ch *ch,
 		btfmslim->sample_rate == 88200)) {
 		BTFMSLIM_INFO("disconnecting the ports, removing the channel");
 		/* disconnect the ports of the stream */
-		ret = slim_stream_unprepare_disconnect_port(ch->dai.sruntime,
+		ret = btfm_slim_stream_unprepare(ch->dai.sruntime,
 				true, false);
 		if (ret != 0)
 			BTFMSLIM_ERR("slim_stream_unprepare failed %d", ret);
@@ -215,7 +233,7 @@ int btfm_slim_disable_ch(struct btfmslim *btfmslim, struct btfmslim_ch *ch,
 		BTFMSLIM_ERR("slim_stream_disable failed returned val = %d", ret);
 		if ((btfmslim->sample_rate != 44100) && (btfmslim->sample_rate != 88200)) {
 			/* disconnect the ports of the stream */
-			ret = slim_stream_unprepare_disconnect_port(ch->dai.sruntime,
+			ret = btfm_slim_stream_unprepare(ch->dai.sruntime,
 					true, false);
 			if (ret != 0)
 				BTFMSLIM_ERR("slim_stream_unprepare failed %d", ret);
@@ -223,7 +241,7 @@ int btfm_slim_disable_ch(struct btfmslim *btfmslim, struct btfmslim_ch *ch,
 	}
 
 	/* free the ports allocated to the stream */
-	ret = slim_stream_unprepare_disconnect_port(ch->dai.sruntime, false, true);
+	ret = btfm_slim_stream_unprepare(ch->dai.sruntime, false, true);
 	if (ret != 0)
 		BTFMSLIM_ERR("slim_stream_unprepare failed returned val = %d", ret);
 
@@ -751,7 +769,8 @@ static const struct slim_device_id btfm_slim_id[] = {
 	.prod_code = 0x220,
 	.dev_index = 0x1,
 	.instance = 0x0,
-	}
+	},
+	{ }
 };
 
 MODULE_DEVICE_TABLE(slim, btfm_slim_id);

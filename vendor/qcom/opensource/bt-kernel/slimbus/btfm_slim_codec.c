@@ -147,8 +147,7 @@ static void btfm_slim_dai_shutdown(struct snd_pcm_substream *substream,
 	struct btfmslim_ch *ch;
 	uint8_t rxport, nchan = 1;
 
-	BTFMSLIM_DBG("dai->name: %s, dai->id: %d, dai->rate: %d", dai->name,
-		dai->id, dai->rate);
+	BTFMSLIM_DBG("dai->name: %s, dai->id: %d", dai->name, dai->id);
 
 	switch (dai->id) {
 	case BTFM_FM_SLIM_TX:
@@ -194,6 +193,8 @@ static int btfm_slim_dai_hw_params(struct snd_pcm_substream *substream,
 
 	btfmslim = snd_soc_component_get_drvdata(dai->component);
 	btfmslim->bps = params_width(params);
+	/* 6.18 removed snd_soc_dai.rate; cache it from hw_params instead. */
+	btfmslim->sample_rate = params_rate(params);
 	btfmslim->direction = substream->stream;
 	BTFMSLIM_DBG("dai->name = %s DAI-ID %x rate %d bps %d num_ch %d",
 		dai->name, dai->id, params_rate(params), params_width(params),
@@ -213,11 +214,8 @@ static int btfm_slim_dai_prepare(struct snd_pcm_substream *substream,
 	btfmslim = snd_soc_component_get_drvdata(dai->component);
 	btfmslim->direction = substream->stream;
 	bt_soc_enable_status = 0;
-	BTFMSLIM_INFO("dai->name: %s, dai->id: %d, dai->rate: %d direction: %d", dai->name,
-		dai->id, dai->rate, btfmslim->direction);
-
-	/* save sample rate */
-	btfmslim->sample_rate = dai->rate;
+	BTFMSLIM_INFO("dai->name: %s, dai->id: %d, rate: %d direction: %d", dai->name,
+		dai->id, btfmslim->sample_rate, btfmslim->direction);
 
 	switch (dai->id) {
 	case BTFM_FM_SLIM_TX:
@@ -252,7 +250,7 @@ static int btfm_slim_dai_prepare(struct snd_pcm_substream *substream,
 		return ret;
 	}
 
-	ret = btfm_slim_enable_ch(btfmslim, ch, rxport, dai->rate, nchan);
+	ret = btfm_slim_enable_ch(btfmslim, ch, rxport, btfmslim->sample_rate, nchan);
 
 	/* save the enable channel status */
 	if (ret == 0)
@@ -267,8 +265,8 @@ static int btfm_slim_dai_prepare(struct snd_pcm_substream *substream,
 
 /* This function will be called once during boot up */
 static int btfm_slim_dai_set_channel_map(struct snd_soc_dai *dai,
-				unsigned int tx_num, unsigned int *tx_slot,
-				unsigned int rx_num, unsigned int *rx_slot)
+				unsigned int tx_num, const unsigned int *tx_slot,
+				unsigned int rx_num, const unsigned int *rx_slot)
 {
 	int ret = 0, i;
 	struct btfmslim *btfmslim = snd_soc_component_get_drvdata(dai->component);
@@ -292,7 +290,7 @@ static int btfm_slim_dai_set_channel_map(struct snd_soc_dai *dai,
 		/* Set Rx Channel number from machine driver and
 		 * get channel handler from slimbus driver
 		*/
-		rx_chs->ch = *(uint8_t *)(rx_slot + i);
+		rx_chs->ch = *(const uint8_t *)(rx_slot + i);
 		BTFMSLIM_DBG("    %d\t%s\t%d\t%d\t", rx_chs->id,
 			rx_chs->name, rx_chs->port, rx_chs->ch);
 	}
@@ -303,7 +301,7 @@ static int btfm_slim_dai_set_channel_map(struct snd_soc_dai *dai,
 		/* Set Tx Channel number from machine driver and
 		 * get channel handler from slimbus driver
 		*/
-		tx_chs->ch = *(uint8_t *)(tx_slot + i);
+		tx_chs->ch = *(const uint8_t *)(tx_slot + i);
 	BTFMSLIM_DBG("    %d\t%s\t%d\t%d\t", tx_chs->id,
 			tx_chs->name, tx_chs->port, tx_chs->ch);
 	}
@@ -311,7 +309,7 @@ static int btfm_slim_dai_set_channel_map(struct snd_soc_dai *dai,
 	return ret;
 }
 
-static int btfm_slim_dai_get_channel_map(struct snd_soc_dai *dai,
+static int btfm_slim_dai_get_channel_map(const struct snd_soc_dai *dai,
 				 unsigned int *tx_num, unsigned int *tx_slot,
 				 unsigned int *rx_num, unsigned int *rx_slot)
 {
