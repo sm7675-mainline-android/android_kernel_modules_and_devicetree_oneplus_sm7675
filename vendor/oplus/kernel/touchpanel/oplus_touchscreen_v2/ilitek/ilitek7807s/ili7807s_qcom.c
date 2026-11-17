@@ -2822,7 +2822,7 @@ int ili_core_spi_setup(int num)
 	}
 
 	ILI_INFO("spi clock = %u\n", freq[num]);
-	ilits->spi->chip_select =
+	ilits->spi->chip_select[0] =
 		0; /*modify reg=0 for more tp vendor share same spi interface*/
 	ilits->spi->mode = SPI_MODE_0;
 	ilits->spi->bits_per_word = 8;
@@ -2843,8 +2843,8 @@ int ili_core_spi_setup(int num)
 
 	ILI_INFO("name = %s, bus_num = %d,cs = %d, mode = %d, speed = %d\n",
 		 ilits->spi->modalias,
-		 ilits->spi->master->bus_num,
-		 ilits->spi->chip_select,
+		 ilits->spi->controller->bus_num,
+		 ilits->spi->chip_select[0],
 		 ilits->spi->mode,
 		 ilits->spi->max_speed_hz);
 	return 0;
@@ -4593,7 +4593,7 @@ int ilitek7807s_spi_probe(struct spi_device *spi)
 		return -ENODEV;
 	}
 
-	if (spi->master->flags & SPI_MASTER_HALF_DUPLEX) {
+	if (spi->controller->flags & SPI_MASTER_HALF_DUPLEX) {
 		ILI_ERR("Full duplex not supported by master\n");
 		return -EIO;
 	}
@@ -4851,7 +4851,7 @@ module_init(tp_driver_init_ili_7807s);
 module_exit(tp_driver_exit_ili_7807s);
 
 #if IS_MODULE(CONFIG_TOUCHPANEL_OPLUS)
-MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+MODULE_IMPORT_NS("VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");
 #endif
 
 MODULE_DESCRIPTION("Touchscreen ili7807s Driver");

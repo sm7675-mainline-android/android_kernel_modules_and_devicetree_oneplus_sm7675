@@ -735,6 +735,7 @@ static void syna_dev_report_input_events(struct syna_tcm *tcm)
 	int wy;
 	unsigned int status;
 	unsigned int touch_count;
+	unsigned int gesture_key;
 	struct input_dev *input_dev = tcm->input_dev;
 	unsigned int max_objects = tcm->tcm_dev->max_objects;
 	struct tcm_touch_data_blob *touch_data;
@@ -836,9 +837,14 @@ static void syna_dev_report_input_events(struct syna_tcm *tcm)
 					touchpanel_event_call_notifier(EVENT_ACTION_UNDER_WATER, (void *)&tcm->under_water);
 				}
 			} else {
-				input_report_key(input_dev, KEY_F4, 1);
+				if (touch_data->gesture_id == GESTURE_ID_DOUBLE_TAP &&
+				    !(READ_ONCE(tcm->gesture_type) & BIT(0)))
+					goto exit;
+				gesture_key = touch_data->gesture_id == GESTURE_ID_DOUBLE_TAP ?
+					KEY_WAKEUP : KEY_F4;
+				input_report_key(input_dev, gesture_key, 1);
 				input_sync(input_dev);
-				input_report_key(input_dev, KEY_F4, 0);
+				input_report_key(input_dev, gesture_key, 0);
 				input_sync(input_dev);
 			}
 		}
@@ -1002,6 +1008,7 @@ static int syna_dev_create_input_device(struct syna_tcm *tcm)
 #ifdef ENABLE_WAKEUP_GESTURE
 	set_bit(KEY_F4, input_dev->keybit);
 	input_set_capability(input_dev, EV_KEY, KEY_F4);
+	input_set_capability(input_dev, EV_KEY, KEY_WAKEUP);
 	set_bit(KEY_UNDER_WATER, input_dev->keybit);
 	input_set_capability(input_dev, EV_KEY, KEY_UNDER_WATER);
 	set_bit(KEY_ON_WATER, input_dev->keybit);

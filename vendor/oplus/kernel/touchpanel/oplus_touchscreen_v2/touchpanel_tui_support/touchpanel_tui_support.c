@@ -483,7 +483,7 @@ static void touchpanel_trusted_touch_tvm_vm_mode_enable(struct touchpanel_data *
 	if (ts->bus_type == TP_BUS_I2C)
 		rc = pm_runtime_get_sync(ts->client->adapter->dev.parent);
 	else
-		rc = pm_runtime_get_sync(ts->s_client->master->dev.parent);
+		rc = pm_runtime_get_sync(ts->s_client->controller->dev.parent);
 
 	if (rc < 0) {
 		TPD_INFO("failed to get sync rc:%d\n", rc);
@@ -650,7 +650,7 @@ static void touchpanel_trusted_touch_tvm_vm_mode_disable(struct touchpanel_data 
 	if (ts->bus_type == TP_BUS_I2C)
 		pm_runtime_put_sync(ts->client->adapter->dev.parent);
 	else
-		pm_runtime_put_sync(ts->s_client->master->dev.parent);
+		pm_runtime_put_sync(ts->s_client->controller->dev.parent);
 
 	touchpanel_trusted_touch_set_vm_state(ts, TVM_I2C_SESSION_RELEASED);
 	rc = touchpanel_vm_mem_release(ts);
@@ -736,7 +736,7 @@ static void touchpanel_trusted_touch_abort_tvm(struct touchpanel_data *ts)
 		if (ts->bus_type == TP_BUS_I2C)
 			pm_runtime_put_sync(ts->client->adapter->dev.parent);
 		else
-			pm_runtime_put_sync(ts->s_client->master->dev.parent);
+			pm_runtime_put_sync(ts->s_client->controller->dev.parent);
 	case TVM_I2C_SESSION_RELEASED:
 		rc = touchpanel_vm_mem_release(ts);
 		if (rc)
@@ -836,7 +836,7 @@ static int touchpanel_bus_get(struct touchpanel_data *ts)
 	if (ts->bus_type == TP_BUS_I2C) {
 		dev = ts->client->adapter->dev.parent;
 	} else {
-		dev = ts->s_client->master->dev.parent;
+		dev = ts->s_client->controller->dev.parent;
 	}
 	TP_INFO(ts->tp_index, "%s dev\n", __func__);
 
@@ -867,7 +867,7 @@ static void touchpanel_bus_put(struct touchpanel_data *ts)
 	if (ts->bus_type == TP_BUS_I2C)
 		dev = ts->client->adapter->dev.parent;
 	else
-		dev = ts->s_client->master->dev.parent;
+		dev = ts->s_client->controller->dev.parent;
 
 	mutex_lock(&ts->clk_io_ctrl_mutex);
 	if (ts->core_clk != NULL && ts->iface_clk != NULL)

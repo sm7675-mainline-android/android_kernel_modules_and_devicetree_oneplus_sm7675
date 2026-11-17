@@ -8483,7 +8483,7 @@ static int syna_tcm_probe(struct spi_device *spi)
 	ts->s_client  = spi;
 	ts->irq = spi->irq;
 	ts->chip_data = tcm_info;
-	ts->s_client->chip_select = 0; /*modify reg=0 for more tp vendor share same spi interface*/
+	ts->s_client->chip_select[0] = 0; /*modify reg=0 for more tp vendor share same spi interface*/
 	spi_set_drvdata(spi, ts);
 
 	ts->ts_ops = &syna_tcm_ops;

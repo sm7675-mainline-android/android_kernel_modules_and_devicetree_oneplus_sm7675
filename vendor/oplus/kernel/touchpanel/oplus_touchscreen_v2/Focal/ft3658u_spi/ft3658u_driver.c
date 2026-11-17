@@ -3082,7 +3082,7 @@ static int fts_tp_probe(struct spi_device *spi)
 
 	spi->mode = SPI_MODE_0;
 	spi->bits_per_word = 8;
-	spi->chip_select = 0; /*modify reg=0 for more tp vendor share same spi interface*/
+	spi->chip_select[0] = 0; /*modify reg=0 for more tp vendor share same spi interface*/
 #ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
 		spi->cs_setup.value = 1;

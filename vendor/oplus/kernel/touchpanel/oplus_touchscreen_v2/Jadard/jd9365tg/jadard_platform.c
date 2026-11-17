@@ -864,7 +864,7 @@ int jadard_chip_common_probe(struct spi_device *spi)
     u64 time_counter = 0;
 
     JD_I("Enter %s \n", __func__);
-    if (spi->master->flags & SPI_MASTER_HALF_DUPLEX) {
+    if (spi->controller->flags & SPI_MASTER_HALF_DUPLEX) {
         dev_err(&spi->dev,
                 "%s: Full duplex not supported by host\n", __func__);
         return -EIO;
@@ -890,7 +890,7 @@ int jadard_chip_common_probe(struct spi_device *spi)
     pjadard_ts_data = ts;
     spi->bits_per_word = 8;
     spi->mode = SPI_MODE_0;
-    spi->chip_select = 0;
+    spi->chip_select[0] = 0;
     JD_I("SPI CLOCK SET\n");
     spi->cs_setup.value = 1;
     spi->cs_setup.unit = 0;
@@ -899,7 +899,7 @@ int jadard_chip_common_probe(struct spi_device *spi)
     spi->cs_inactive.value = 1;
     spi->cs_inactive.unit = 0;
     /* Maybe config chip_select on Kasan system when read ICID 0000 */
-    /* spi->chip_select = 0; */
+    /* spi->chip_select[0] = 0; */
 
     ts->spi = spi;
     mutex_init(&(ts->spi_lock));

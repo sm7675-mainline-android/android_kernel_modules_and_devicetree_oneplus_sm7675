@@ -1352,7 +1352,7 @@ static int syna_cdev_ioctl_check_frame(struct syna_tcm *tcm,
 
 	if (tcm->use_short_frame_waiting != 0) {
 		timeout = MINIMUM_WAITING_TIME;
-		LOGE("Updated the frame waiting to %dms\n", timeout);
+		LOGD("Updated the frame waiting to %dms\n", timeout);
 	}
 
 	if (list_empty(&tcm->frame_fifo_queue)) {
@@ -1486,7 +1486,7 @@ static int syna_cdev_ioctl_get_frame(struct syna_tcm *tcm,
 
 	if (tcm->use_short_frame_waiting != 0) {
 		timeout = MINIMUM_WAITING_TIME;
-		LOGE("Updated the frame waiting to %dms\n", timeout);
+		LOGD("Updated the frame waiting to %dms\n", timeout);
 	}
 
 	if (list_empty(&tcm->frame_fifo_queue)) {

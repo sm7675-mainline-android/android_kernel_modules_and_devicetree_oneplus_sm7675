@@ -540,7 +540,7 @@ static int core_spi_setup(void *chip_data, u32 freq)
 		chip_info->spi->max_speed_hz = freq;
 	}
 
-	chip_info->spi->chip_select =
+	chip_info->spi->chip_select[0] =
 		0; /*modify reg=0 for more tp vendor share same spi interface*/
 
 	if (spi_setup(chip_info->spi) < 0) {
@@ -550,8 +550,8 @@ static int core_spi_setup(void *chip_data, u32 freq)
 
 	TPD_INFO("name = %s, bus_num = %d,cs = %d, mode = %d, speed = %d\n",
 		 chip_info->spi->modalias,
-		 chip_info->spi->master->bus_num,
-		 chip_info->spi->chip_select,
+		 chip_info->spi->controller->bus_num,
+		 chip_info->spi->chip_select[0],
 		 chip_info->spi->mode,
 		 chip_info->spi->max_speed_hz);
 	return 0;
@@ -3217,7 +3217,7 @@ int  ilitek_platform_probe(struct spi_device *spi)
 	/*chip_info->tp_type = TP_AUO;*/
 
 	/*---prepare for spi parameter---*/
-	if (ts->s_client->master->flags & SPI_MASTER_HALF_DUPLEX) {
+	if (ts->s_client->controller->flags & SPI_MASTER_HALF_DUPLEX) {
 		printk("Full duplex not supported by master\n");
 		ret = -EIO;
 		goto err_out;

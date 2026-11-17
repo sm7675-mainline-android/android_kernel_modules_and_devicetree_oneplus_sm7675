@@ -9527,14 +9527,14 @@ static int __maybe_unused hx83102j_tp_probe(struct spi_device *spi)
 	chip_info->using_headfile = false;
 	chip_info->first_download_finished = false;
 
-	if (ts->s_client->master->flags & SPI_MASTER_HALF_DUPLEX) {
+	if (ts->s_client->controller->flags & SPI_MASTER_HALF_DUPLEX) {
 		TPD_INFO("Full duplex not supported by master\n");
 		ret = -EIO;
 		goto err_spi_setup;
 	}
 	ts->s_client->bits_per_word = 8;
 	ts->s_client->mode = SPI_MODE_3;
-	ts->s_client->chip_select = 0;
+	ts->s_client->chip_select[0] = 0;
 
 
 #ifdef HIMAX_DBG
