@@ -3067,7 +3067,6 @@ int msm_vidc_v4l2_fh_init(struct msm_vidc_inst *inst)
 
 	v4l2_fh_init(&inst->fh, &core->vdev[index].vdev);
 	inst->fh.ctrl_handler = &inst->ctrl_handler;
-	v4l2_fh_add(&inst->fh);
 
 	return rc;
 }
@@ -3082,7 +3081,6 @@ int msm_vidc_v4l2_fh_deinit(struct msm_vidc_inst *inst)
 		return 0;
 	}
 
-	v4l2_fh_del(&inst->fh);
 	inst->fh.ctrl_handler = NULL;
 	v4l2_fh_exit(&inst->fh);
 
@@ -3103,6 +3101,8 @@ static int vb2q_init(struct msm_vidc_inst *inst,
 	q->ops = core->vb2_ops;
 	q->mem_ops = core->vb2_mem_ops;
 	q->drv_priv = inst;
+	q->lock = &inst->ctx_q_lock;
+	q->dev = &core->pdev->dev;
 	q->copy_timestamp = 1;
 	rc = vb2_queue_init(q);
 	if (rc)
@@ -3167,8 +3167,9 @@ int msm_vidc_vb2_queue_init(struct msm_vidc_inst *inst)
 
 	/* v4l2_m2m_ctx_init will do input & output queues initialization */
 	inst->m2m_ctx = v4l2_m2m_ctx_init(inst->m2m_dev, inst, m2m_queue_init);
-	if (!inst->m2m_ctx) {
-		rc = -EINVAL;
+	if (IS_ERR(inst->m2m_ctx)) {
+		rc = PTR_ERR(inst->m2m_ctx);
+		inst->m2m_ctx = NULL;
 		i_vpr_e(inst, "%s: v4l2_m2m_ctx_init failed\n", __func__);
 		goto fail_m2m_ctx_init;
 	}
