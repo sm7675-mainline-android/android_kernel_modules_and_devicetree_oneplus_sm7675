@@ -6579,7 +6579,7 @@ enum hrtimer_restart oplus_voocphy_monitor_base_timer(struct hrtimer* timer)
 			}
 		}
 	}
-	hrtimer_forward(&chip->monitor_btimer, chip->monitor_btimer.base->get_time(), chip->moniotr_kt);
+	hrtimer_forward_now(&chip->monitor_btimer, chip->moniotr_kt);
 
 	return HRTIMER_RESTART;
 }
