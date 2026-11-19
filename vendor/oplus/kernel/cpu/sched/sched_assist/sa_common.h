@@ -621,7 +621,6 @@ static inline void init_task_ux_info(struct task_struct *t)
 	ots->ux_nice = -1;
 	ots->vruntime = 0;
 	ots->preset_vruntime = 0;
-	ots->cfs_delta = -1;
 	ots->tick_hit_count = 0;
 	ots->start_jiffies = 0;
 #if IS_ENABLED(CONFIG_OPLUS_FEATURE_ABNORMAL_FLAG)

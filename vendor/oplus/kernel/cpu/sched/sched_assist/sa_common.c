@@ -629,7 +629,6 @@ set:
 			nice = ux_type_to_nice(ux_state);
 			initial_prio_nice_and_vruntime(orq, ots, prio, nice);
 			insert_task_to_ux_timeline(ots, orq);
-			save_task_vruntime_delta(t, ots);
 		} else {
 			int next_type;
 			pick_next_ux_exec(ots, 0, &next_type);
@@ -1213,7 +1212,6 @@ static void enqueue_ux_thread(struct rq *rq, struct task_struct *p)
 			update_vruntime_task_attach(orq, ots);
 		}
 		insert_task_to_ux_timeline(ots, orq);
-		save_task_vruntime_delta(p, ots);
 	}
 	spin_unlock_irqrestore(orq->ux_list_lock, irqflag);
 }
