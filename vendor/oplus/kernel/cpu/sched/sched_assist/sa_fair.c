@@ -777,7 +777,7 @@ void oplus_replace_next_task_fair(struct rq *rq, struct task_struct **p, struct 
 		struct oplus_task_struct *ots = rb_entry(node, struct oplus_task_struct, ux_entry);
 		struct task_struct *temp = ots_to_ts(ots);
 		if (IS_ERR_OR_NULL(temp))
-			continue;
+			break;
 
 		if (unlikely(task_cpu(temp) != rq->cpu)) {
 			update_ux_timeline_task_removal(orq, ots, NULL, false);
