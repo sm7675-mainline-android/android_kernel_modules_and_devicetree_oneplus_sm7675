@@ -2837,6 +2837,7 @@ static int syna_dev_connect(struct syna_tcm *tcm)
 #endif
 
 	tcm->pwr_state = PWR_ON;
+	tcm->sub_pwr_state = SUB_PWR_RESUME_DONE;
 	tcm->is_connected = true;
 	tcm->bus_ready = true;
 
