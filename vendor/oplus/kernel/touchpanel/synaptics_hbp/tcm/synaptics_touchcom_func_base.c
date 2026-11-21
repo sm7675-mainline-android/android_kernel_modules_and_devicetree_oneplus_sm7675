@@ -1684,7 +1684,8 @@ int syna_tcm_send_command(struct tcm_dev *tcm_dev,
 			payload_length,
 			code,
 			delay_ms_resp);
-	if (retval < 0)
+	if (retval < 0 && !(tcm_dev->protocol == TOUCHCOMM_V1 &&
+			    *code == STATUS_ERROR))
 		LOGE("Fail to run command 0x%02x\n", command);
 
 	LOGD("Status code returned: 0x%02x\n", *code);

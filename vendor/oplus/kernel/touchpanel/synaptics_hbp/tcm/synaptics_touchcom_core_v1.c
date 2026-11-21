@@ -312,7 +312,7 @@ static void syna_tcm_v1_dispatch_report(struct tcm_dev *tcm_dev)
 			case CMD_RESET:
 				LOGD("Reset by command 0x%02X\n",
 					tcm_msg->command);
-				tcm_msg->response_code = STATUS_OK;
+				tcm_msg->response_code = REPORT_IDENTIFY;
 				ATOMIC_SET(tcm_msg->command_status,
 					CMD_STATE_IDLE);
 				syna_pal_completion_complete(cmd_completion);
@@ -322,7 +322,7 @@ static void syna_tcm_v1_dispatch_report(struct tcm_dev *tcm_dev)
 			case CMD_RUN_APPLICATION_FIRMWARE:
 			case CMD_ENTER_PRODUCTION_TEST_MODE:
 			case CMD_ROMBOOT_RUN_BOOTLOADER_FIRMWARE:
-				tcm_msg->response_code = STATUS_OK;
+				tcm_msg->response_code = REPORT_IDENTIFY;
 				ATOMIC_SET(tcm_msg->command_status,
 					CMD_STATE_IDLE);
 				syna_pal_completion_complete(cmd_completion);
@@ -378,10 +378,10 @@ static void syna_tcm_v1_dispatch_response(struct tcm_dev *tcm_dev)
 	tcm_msg = &tcm_dev->msg_data;
 	cmd_completion = &tcm_msg->cmd_completion;
 
-	tcm_msg->response_code = tcm_msg->status_report_code;
-
 	if (ATOMIC_GET(tcm_msg->command_status) != CMD_STATE_BUSY)
 		return;
+
+	tcm_msg->response_code = tcm_msg->status_report_code;
 
 	if (tcm_msg->payload_length == 0) {
 		tcm_dev->resp_buf.data_length = tcm_msg->payload_length;
@@ -958,6 +958,7 @@ do_dispatch:
 		(tcm_msg->status_report_code == STATUS_INVALID)) {
 		switch (tcm_msg->status_report_code) {
 		case STATUS_OK:
+		case STATUS_ERROR:
 			break;
 		case STATUS_CONTINUED_READ:
 			LOGE("Out-of-sync continued read\n");
@@ -1221,17 +1222,23 @@ check_response:
 	}
 
 	/* copy response code to the caller */
-	LOGD("Received code 0x%02x\n",
-		tcm_msg->status_report_code);
+	LOGD("Received code 0x%02x\n", tcm_msg->response_code);
 	if (resp_code)
-		*resp_code = tcm_msg->status_report_code;
+		*resp_code = tcm_msg->response_code;
 
-	if (tcm_msg->response_code != STATUS_OK) {
-		LOGE("Received code 0x%02x (command 0x%02x)\n",
-			tcm_msg->status_report_code, tcm_msg->command);
+	if (tcm_msg->response_code == STATUS_OK ||
+	    tcm_msg->response_code == REPORT_IDENTIFY) {
+		retval = 0;
+	} else if (tcm_msg->response_code == STATUS_ERROR && payload_len &&
+		   (command == CMD_GET_DYNAMIC_CONFIG ||
+		    command == CMD_SET_DYNAMIC_CONFIG)) {
+		LOGW("Firmware rejected command 0x%02x for dynamic field 0x%02x (status 0x%02x)\n",
+		     command, payload[0], tcm_msg->response_code);
 		retval = _EIO;
 	} else {
-		retval = 0;
+		LOGE("Received code 0x%02x (command 0x%02x)\n",
+			tcm_msg->response_code, command);
+		retval = _EIO;
 	}
 
 exit:

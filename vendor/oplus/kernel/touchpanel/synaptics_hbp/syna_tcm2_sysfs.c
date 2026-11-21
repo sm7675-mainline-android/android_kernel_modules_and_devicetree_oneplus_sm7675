@@ -1921,7 +1921,8 @@ retry:
 			&resp_code,
 			&resp_data_buf,
 			delay_ms_resp);
-	if (retval < 0) {
+	if (retval < 0 && !(retval == -EIO && resp_code == STATUS_ERROR &&
+			    tcm->tcm_dev->protocol == TOUCHCOMM_V1)) {
 		LOGE("Fail to run command 0x%02x with payload len %d\n",
 			data[0], payload_length);
 		/* even if resp_code returned is not success
