@@ -1616,7 +1616,7 @@ static int syna_cdev_ioctl_set_reports(struct syna_tcm *tcm,
 		}
 	}
 
-	LOGE("Forward %d types of reports to the Queue.\n", report_set);
+	LOGD("Forward %d types of reports to the Queue.\n", report_set);
 
 	retval = report_set;
 
@@ -1703,7 +1703,7 @@ exit:
 		/* enable the report to queue */
 		syna_cdev_clean_queue(tcm);
 		/*syna_pal_mem_set(tcm->report_to_queue, EFP_ENABLE, (STATUS_ERROR + 1));*/
-		LOGE("enable response to report_to_queue for touch_and_hold\n");
+		LOGD("enable response to report_to_queue for touch_and_hold\n");
 		tcm->hbp_enabled = true;
 	}
 	return retval;
@@ -1730,13 +1730,13 @@ static int syna_sysfs_set_fingerprint_post(struct syna_tcm *tcm)
 
 	if((tcm->sub_pwr_state == SUB_PWR_RESUME_DONE) && (tcm->pwr_state == PWR_ON)) {
 		//screen on, nothing to do
-		LOGE("Enable all Report and Response to report_to_queue\n");
+		LOGD("Enable all Report and Response to report_to_queue\n");
 		/*syna_pal_mem_set(tcm->report_to_queue, EFP_ENABLE, REPORT_TYPES);*/
 		tcm->hbp_enabled = true;
 		goto exit;
 	} else if (tcm->sub_pwr_state == SUB_PWR_SUSPEND_DONE){
 		/* do not fill any report/response to queue */
-		LOGE("Disable all Report and response to report_to_queue\n");
+		LOGD("Disable all Report and response to report_to_queue\n");
 		/*syna_pal_mem_set(tcm->report_to_queue, EFP_DISABLE, REPORT_TYPES);*/
 		tcm->hbp_enabled = false;
 
@@ -1878,7 +1878,7 @@ retry:
 	}
 
 	payload_length = syna_pal_le2_to_uint(&data[1]);
-	LOGE("Command = 0x%02x, payload length = %d data:%*ph\n",
+	LOGD("Command = 0x%02x, payload length = %d data:%*ph\n",
 		data[0], payload_length, payload_length, &data[3]);
 
 	if (g_sysfs_io_polling_interval == RESP_IN_ATTN)
@@ -1891,18 +1891,18 @@ retry:
 			tcm->gesture_type = (unsigned short)syna_pal_le2_to_uint(&data[4]);
 			syna_dev_update_lpwg_status(tcm);
 			syna_sysfs_set_fingerprint_prepare(tcm);
-			LOGE("HBP set gesture_type(0x%04x)\n", tcm->gesture_type);
+			LOGD("HBP set gesture_type(0x%04x)\n", tcm->gesture_type);
 		} else if (data[3] == DC_TOUCH_AND_HOLD) {
 			tcm->touch_and_hold = (unsigned short)syna_pal_le2_to_uint(&data[4]);
 			syna_dev_update_lpwg_status(tcm);
 			syna_sysfs_set_fingerprint_prepare(tcm);
-			LOGE("HBP set touch_and_hold(0x%04x)\n", tcm->touch_and_hold);
+			LOGD("HBP set touch_and_hold(0x%04x)\n", tcm->touch_and_hold);
 			if (tcm->touch_and_hold) {
 				tcm->is_fp_down = false;
 			}
 		} else if (data[3] == DC_UNDER_WATER_DETECT) {
 			tcm->under_water_detect = (unsigned short)syna_pal_le2_to_uint(&data[4]);
-			LOGE("HBP set under_water_detect(0x%04x)\n", tcm->under_water_detect);
+			LOGD("HBP set under_water_detect(0x%04x)\n", tcm->under_water_detect);
 			tcm->under_water_detect = (tcm->under_water_detect >> UNDER_WATER_BIT) & 0x1;
 			syna_dev_update_lpwg_status(tcm);
 			syna_sysfs_set_fingerprint_prepare(tcm);
@@ -1955,7 +1955,7 @@ retry:
 	data[1] = (unsigned char)(resp_data_buf.data_length & 0xff);
 	data[2] = (unsigned char)((resp_data_buf.data_length >> 8) & 0xff);
 
-	LOGE("resp data: 0x%02x 0x%02x 0x%02x\n",
+	LOGD("resp data: 0x%02x 0x%02x 0x%02x\n",
 		data[0], data[1], data[2]);
 
 	/* response data */
@@ -2076,7 +2076,7 @@ static int syna_cdev_ioctl_enable_irq(struct syna_tcm *tcm,
 		g_sysfs_io_polling_interval =
 			tcm->tcm_dev->msg_data.default_resp_reading;
 
-		LOGE("IRQ is disabled by userspace application\n");
+		LOGD("IRQ is disabled by userspace application\n");
 
 		break;
 	case SYSFS_ENABLED_INTERRUPT:
@@ -2088,7 +2088,7 @@ static int syna_cdev_ioctl_enable_irq(struct syna_tcm *tcm,
 
 		g_sysfs_io_polling_interval = RESP_IN_ATTN;
 
-		LOGE("IRQ is enabled by userspace application\n");
+		LOGD("IRQ is enabled by userspace application\n");
 
 		break;
 	default:
@@ -2103,8 +2103,8 @@ static int syna_cdev_ioctl_enable_irq(struct syna_tcm *tcm,
 		if (g_sysfs_io_polling_interval < RESP_IN_POLLING)
 			g_sysfs_io_polling_interval = RESP_IN_POLLING;
 
-		LOGE("IRQ is enabled by userspace application\n");
-		LOGE("Polling interval is set to %d ms\n",
+		LOGD("IRQ is enabled by userspace application\n");
+		LOGD("Polling interval is set to %d ms\n",
 			g_sysfs_io_polling_interval);
 
 		break;
@@ -2627,7 +2627,7 @@ static int syna_cdev_ioctl_set_driver_status(struct syna_tcm *tcm,
 		return -EINVAL;
 	}
 
-	LOGE("Daemon data size: %u\n", data_size);
+	LOGD("Daemon data size: %u\n", data_size);
 
 	data = kmalloc(sizeof(hbp_driver_info_t), GFP_KERNEL);
 	if (!(data)) {
@@ -2651,7 +2651,7 @@ static int syna_cdev_ioctl_set_driver_status(struct syna_tcm *tcm,
 	tcm->use_short_frame_waiting = drv_info->short_frame_waiting;
 	kfree(data);
 
-	LOGE("use_short_frame_waiting: %d\n", tcm->use_short_frame_waiting);
+	LOGD("use_short_frame_waiting: %d\n", tcm->use_short_frame_waiting);
 exit:
 	return retval;
 }
@@ -2867,11 +2867,11 @@ static int syna_cdev_ioctls(struct inode *inp, struct file *filp,
 	};
 	LOGD("syna_cdev_ioctls Enter, IOC_ID:0x%02X\n", (unsigned int)_IOC_NR(cmd));
 	if ((_IOC_NR(cmd) == CUS_SET_DRIVER_STATUS_ID)/* && tcm->waiting_frame == 1*/) {
-		LOGE("IOC_ID:0x%02X CUS received\n", (unsigned int)_IOC_NR(cmd));
+		LOGD("IOC_ID:0x%02X CUS received\n", (unsigned int)_IOC_NR(cmd));
 		/* instert one report to wakeup wait_frame */
 		tcm->use_short_frame_waiting = 1;
 		syna_cdev_update_doze_state_report_queue(tcm);
-		LOGE("Pre set short_frame_waiting = 1 \n");
+		LOGD("Pre set short_frame_waiting = 1\n");
 	}
 
 	syna_pal_mutex_lock(&tcm->extif_mutex);
@@ -3199,7 +3199,7 @@ static int syna_cdev_open(struct inode *inp, struct file *filp)
 #endif
 	syna_pal_mutex_unlock(&tcm->extif_mutex);
 
-	LOGE("cdev open\n");
+	LOGD("cdev open\n");
 
 	return 0;
 }
@@ -3228,7 +3228,7 @@ static int syna_cdev_release(struct inode *inp, struct file *filp)
 	}
 
 
-	LOGE("%s:Enter\n", __func__);
+	LOGD("Enter\n");
 	IF_ARG_NULL_OUT(g_sysfs_dir);
 
 	p_kobj = g_sysfs_dir->parent;
@@ -3276,7 +3276,7 @@ static int syna_cdev_release(struct inode *inp, struct file *filp)
 
 	g_sysfs_extra_bytes_read = 0;
 
-	LOGE("cdev close\n");
+	LOGD("cdev close\n");
 	return 0;
 }
 
