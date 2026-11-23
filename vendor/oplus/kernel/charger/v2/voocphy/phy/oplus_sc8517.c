@@ -321,18 +321,15 @@ static int sc8517_read_i2c_block(struct i2c_client *client, u8 reg, u8 length, u
 	}
 
 	mutex_lock(&chip->i2c_rw_lock);
-	rc = i2c_smbus_read_i2c_block_data(client, reg, length, returnData);
-
-	if (rc < 0) {
-		while (retry > 0) {
+	do {
+		rc = i2c_smbus_read_i2c_block_data(client, reg, length, returnData);
+		if (rc == length)
+			break;
+		if (rc >= 0)
+			rc = -EIO;
+		if (retry)
 			usleep_range(5000, 5000);
-			rc = i2c_smbus_read_i2c_block_data(client, reg, length, returnData);
-			if (rc < 0)
-				retry--;
-			else
-				break;
-		}
-	}
+	} while (retry--);
 
 	if (rc < 0) {
 		sc8517_i2c_error(voocphy, true);
