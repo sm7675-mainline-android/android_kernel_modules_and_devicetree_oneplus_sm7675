@@ -794,10 +794,10 @@ static int battery_psy_get_prop(struct power_supply *psy,
 		if (is_support_parallel_battery(chip->gauge_topic) &&
 		    is_main_gauge_topic_available(chip))
 			rc = oplus_mms_get_item_data(chip->main_gauge_topic, GAUGE_ITEM_CURR,
-						     &data, (chip->wired_online || chip->wls_online));
+						     &data, false);
 		else
 			rc = oplus_mms_get_item_data(chip->gauge_topic, GAUGE_ITEM_CURR,
-						     &data, (chip->wired_online || chip->wls_online));
+						     &data, false);
 		pval->intval = data.intval;
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_CONTROL_LIMIT:
