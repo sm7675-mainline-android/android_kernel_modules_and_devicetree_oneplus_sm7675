@@ -592,7 +592,7 @@ static u8 sc8517_get_int_value(struct oplus_voocphy_manager *chip)
 	}
 
 	memcpy(chip->int_column, int_column, sizeof(chip->int_column));
-	chg_info("SC8517_REG_09 -->09~0E[0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x]\n",
+	chg_debug("SC8517_REG_09 -->09~0E[0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x]\n",
 		 chip->int_column[0], chip->int_column[1], chip->int_column[2],
 		 chip->int_column[3], chip->int_column[4], chip->int_column[5]);
 
