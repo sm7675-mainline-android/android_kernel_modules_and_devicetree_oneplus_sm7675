@@ -3367,9 +3367,9 @@ static int bq27541_get_average_current(struct chip_bq27541 *chip)
 		}
 		if (ret) {
 			if (is_return_pre_value(chip))
-				return chip->current_pre;
+				return -chip->current_pre;
 			dev_err(chip->dev, "error reading current.\n");
-			return chip->current_pre;
+			return -chip->current_pre;
 		}
 	} else {
 		return -chip->current_pre;
