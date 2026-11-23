@@ -7893,6 +7893,7 @@ static int oplus_input_current_limit_ctrl_by_vooc_write(struct oplus_chg_ic_dev 
 {
 	struct battery_chg_dev *bcdev;
 	int rc;
+	int step_err = 0;
 	int cur_usb_icl = 0;
 	int temp_curr;
 
@@ -7907,18 +7908,20 @@ static int oplus_input_current_limit_ctrl_by_vooc_write(struct oplus_chg_ic_dev 
 		for (temp_curr = cur_usb_icl; temp_curr < current_ma; temp_curr += 500) {
 			msleep(35);
 			rc = oplus_chg_set_input_current_with_no_aicl(bcdev, temp_curr);
-			chg_info("[up] set input_current = %d\n", temp_curr);
+			if (rc)
+				return rc;
 		}
 	} else {
 		for (temp_curr = cur_usb_icl; temp_curr > current_ma; temp_curr -= 500) {
 			msleep(35);
-			rc = oplus_chg_set_input_current_with_no_aicl(bcdev, temp_curr);
-			chg_info("[down] set input_current = %d\n", temp_curr);
+			step_err = oplus_chg_set_input_current_with_no_aicl(bcdev, temp_curr);
+			if (step_err)
+				break;
 		}
 	}
 
 	rc = oplus_chg_set_input_current_with_no_aicl(bcdev, current_ma);
-	return rc;
+	return rc ? rc : step_err;
 }
 
 static int oplus_chg_usb_set_input_current(struct battery_chg_dev *bcdev, int current_ma,
