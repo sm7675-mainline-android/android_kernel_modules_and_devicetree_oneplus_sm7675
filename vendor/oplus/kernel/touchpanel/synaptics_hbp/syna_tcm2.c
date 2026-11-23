@@ -2064,17 +2064,11 @@ static void syna_speedup_resume(struct work_struct *work)
 	int retval;
 	struct syna_hw_interface *hw_if = tcm->hw_if;
 	bool irq_enabled = true;
+	bool retry;
 	u64 start_time = 0;
 	unsigned short config = 0;
 
 	LOGI("%s is called\n", __func__);
-
-	/* exit directly if device isn't in suspend state */
-	if (tcm->pwr_state == PWR_ON) {
-		LOGI("pwr_state is already in PWR_ON, exit.\n");
-		tcm->sub_pwr_state = SUB_PWR_RESUME_DONE;
-		return;
-	}
 
 	if (tcm->health_monitor_support) {
 		reset_healthinfo_time_counter(&start_time);
@@ -2088,6 +2082,12 @@ static void syna_speedup_resume(struct work_struct *work)
 		return;
 	};
 
+	if (tcm->pwr_state == PWR_ON && tcm->sub_pwr_state == SUB_PWR_RESUME_DONE) {
+		mutex_unlock(&tcm->mutex);
+		return;
+	}
+
+	retry = tcm->sub_pwr_state == SUB_PWR_RESUME_FAILED;
 	tcm->sub_pwr_state = SUB_PWR_RESUMING;
 	if ((tcm->gesture_type) || (tcm->touch_and_hold)) {
 		retval = syna_tcm_get_dynamic_config(tcm->tcm_dev, DC_GESTURE_TYPE_ENABLE, &config, 0);
@@ -2129,7 +2129,7 @@ static void syna_speedup_resume(struct work_struct *work)
 		LOGI("Disable DC_SET_DIFFER_READ after resume.\n");
 	}
 
-	if ((!tcm->is_fp_down)||(tcm->pwr_state == PWR_UNKNOWN)) {
+	if (!tcm->is_fp_down || tcm->pwr_state == PWR_UNKNOWN || retry) {
 		if (tcm->probe_done && tcm->tcm_dev->firmware_mode_count % FWUPDATE_BL_MAX == 0 && tcm->tcm_dev->firmware_mode_count) {
 			LOGE("bootloader trigger fw update\n");
 			tcm->tcm_dev->firmware_mode_count = 0;
@@ -2164,10 +2164,6 @@ static void syna_speedup_resume(struct work_struct *work)
 			LOGE("Fail to disable lbp mode\n");
 		}
 	}
-	if(tcm->pwr_state == PWR_UNKNOWN)
-	{
-		tcm->pwr_state = PWR_ON;
-	}
 #else
 #ifdef POWER_ALIVE_AT_SUSPEND
 	/* enter normal power mode */
@@ -2195,14 +2191,15 @@ static void syna_speedup_resume(struct work_struct *work)
 		goto exit;
 	}
 
-	retval = 0;
+	tcm->sub_pwr_state = SUB_PWR_RESUME_DONE;
 
 	LOGI("Device resumed (pwr_state:%d)\n", tcm->pwr_state);
 
 	syna_send_signal(tcm, SIG_DISPLAY_ON);
 
 exit:
-	tcm->sub_pwr_state = SUB_PWR_RESUME_DONE;
+	if (retval < 0)
+		tcm->sub_pwr_state = SUB_PWR_RESUME_FAILED;
 	tcm->slept_in_early_suspend = false;
 
 	mutex_unlock(&tcm->mutex);
