@@ -198,7 +198,6 @@ bool oplus_mms_item_update(struct oplus_mms *mms, u32 item_id, bool check_update
 	}
 	mutex_lock(&item->update_lock);
 	item->desc.update(mms, &data);
-	mutex_unlock(&item->update_lock);
 	write_lock(&item->lock);
 	memcpy(&item->data, &data, sizeof(union mms_msg_data));
 	if (!check_update) {
@@ -251,6 +250,7 @@ bool oplus_mms_item_update(struct oplus_mms *mms, u32 item_id, bool check_update
 out:
 	update = item->updated;
 	write_unlock(&item->lock);
+	mutex_unlock(&item->update_lock);
 
 	return update;
 }
