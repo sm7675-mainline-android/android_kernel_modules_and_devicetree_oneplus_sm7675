@@ -70,17 +70,22 @@ struct oplus_dpdm_switch_ic {
 #define OPLUS_AUDIO_SWITCH_READY_RETRY_MAX	50
 #define OPLUS_AUDIO_SWITCH_READY_DELAY_TIME_MS	5
 
+static bool oplus_audio_switch_status_valid(int status)
+{
+	return status >= 0 &&
+		!(status & (TYPEC_AUDIO_SWITCH_STATE_I2C_ERR |
+		    TYPEC_AUDIO_SWITCH_STATE_INVALID_PARAM));
+}
+
 static int oplus_switch_to_ap(struct oplus_dpdm_switch_ic *chip)
 {
 	int rc;
 	int retry;
 	int status;
 
-	mutex_lock(&chip->pinctrl_lock);
 	if (!IS_ERR_OR_NULL(chip->pinctrl) && !IS_ERR_OR_NULL(chip->gpio_dpdm_switch_ap)) {
 		rc = pinctrl_select_state(chip->pinctrl, chip->gpio_dpdm_switch_ap);
 		if (rc < 0) {
-			mutex_unlock(&chip->pinctrl_lock);
 			chg_err("set gpio_dpdm_switch_ap error, rc=%d\n", rc);
 			return rc;
 		}
@@ -88,7 +93,6 @@ static int oplus_switch_to_ap(struct oplus_dpdm_switch_ic *chip)
 	if (!chip->use_audio_switch) {
 		rc = pinctrl_select_state(chip->pinctrl, chip->gpio_switch_ctrl_ap);
 		if (rc < 0) {
-			mutex_unlock(&chip->pinctrl_lock);
 			chg_err("set gpio_switch_ctrl_ap error, rc=%d\n", rc);
 			return rc;
 		}
@@ -96,25 +100,27 @@ static int oplus_switch_to_ap(struct oplus_dpdm_switch_ic *chip)
 		retry = AUDIO_SWITCH_RETRY_MAX;
 		do {
 			status = oplus_get_audio_switch_status();
-			if (TYPEC_AUDIO_SWITCH_STATE_STANDBY & status) {
+			if (oplus_audio_switch_status_valid(status) &&
+			    (status & TYPEC_AUDIO_SWITCH_STATE_STANDBY)) {
 				chg_info("switch to standby, not switch to ap\n");
 				break;
 			}
-			oplus_set_audio_switch_status(0);
+			rc = oplus_set_audio_switch_status(0);
+			if (rc < 0)
+				return rc;
 			status = oplus_get_audio_switch_status();
-			if ((status & TYPEC_AUDIO_SWITCH_STATE_MASK) | TYPEC_AUDIO_SWITCH_STATE_DPDM) {
+			if (!oplus_audio_switch_status_valid(status) ||
+			    (status & TYPEC_AUDIO_SWITCH_STATE_MASK) !=
+			    TYPEC_AUDIO_SWITCH_STATE_DPDM) {
 				chg_err("set switch to ap failed, retry=%d, status = 0x%x\n", retry, status);
 			} else {
 				chg_info("set switch to ap success, retry=%d\n", retry);
 				break;
 			}
 		} while (--retry > 0);
-		if (retry <= 0) {
-			mutex_unlock(&chip->pinctrl_lock);
+		if (retry <= 0)
 			return -EFAULT;
-		}
 	}
-	mutex_unlock(&chip->pinctrl_lock);
 
 	return 0;
 }
@@ -125,11 +131,9 @@ static int oplus_switch_to_vooc(struct oplus_dpdm_switch_ic *chip)
 	int retry;
 	int status;
 
-	mutex_lock(&chip->pinctrl_lock);
 	if (!IS_ERR_OR_NULL(chip->pinctrl) && !IS_ERR_OR_NULL(chip->gpio_dpdm_switch_vooc)) {
 		rc = pinctrl_select_state(chip->pinctrl, chip->gpio_dpdm_switch_vooc);
 		if (rc < 0) {
-			mutex_unlock(&chip->pinctrl_lock);
 			chg_err("set gpio_dpdm_switch_vooc error, rc=%d\n", rc);
 			return rc;
 		}
@@ -137,28 +141,28 @@ static int oplus_switch_to_vooc(struct oplus_dpdm_switch_ic *chip)
 	if (!chip->use_audio_switch) {
 		rc = pinctrl_select_state(chip->pinctrl, chip->gpio_switch_ctrl_vooc);
 		if (rc < 0) {
-			mutex_unlock(&chip->pinctrl_lock);
 			chg_err("set gpio_switch_ctrl_vooc error, rc=%d\n", rc);
 			return rc;
 		}
 	} else {
 		retry = AUDIO_SWITCH_RETRY_MAX;
 		do {
-			oplus_set_audio_switch_status(1);
+			rc = oplus_set_audio_switch_status(1);
+			if (rc < 0)
+				return rc;
 			status = oplus_get_audio_switch_status();
-			if (!(TYPEC_AUDIO_SWITCH_STATE_FAST_CHG & status) || (status < 0)) {
+			if (!oplus_audio_switch_status_valid(status) ||
+			    (status & TYPEC_AUDIO_SWITCH_STATE_MASK) !=
+			    TYPEC_AUDIO_SWITCH_STATE_FAST_CHG) {
 				chg_err("set switch to vooc failed, retry=%d, status = 0x%x\n", retry, status);
 			} else {
 				chg_info("set switch to vooc success, retry=%d\n", retry);
 				break;
 			}
 		} while (--retry > 0);
-		if (retry <= 0) {
-			mutex_unlock(&chip->pinctrl_lock);
+		if (retry <= 0)
 			return -EFAULT;
-		}
 	}
-	mutex_unlock(&chip->pinctrl_lock);
 
 	return 0;
 }
@@ -169,11 +173,9 @@ static int oplus_switch_to_ufcs(struct oplus_dpdm_switch_ic *chip)
 	int retry;
 	int status;
 
-	mutex_lock(&chip->pinctrl_lock);
 	if (!IS_ERR_OR_NULL(chip->pinctrl) && !IS_ERR_OR_NULL(chip->gpio_dpdm_switch_ufcs)) {
 		rc = pinctrl_select_state(chip->pinctrl, chip->gpio_dpdm_switch_ufcs);
 		if (rc < 0) {
-			mutex_unlock(&chip->pinctrl_lock);
 			chg_err("set gpio_dpdm_switch_ufcs error, rc=%d\n", rc);
 			return rc;
 		}
@@ -181,28 +183,28 @@ static int oplus_switch_to_ufcs(struct oplus_dpdm_switch_ic *chip)
 	if (!chip->use_audio_switch) {
 		rc = pinctrl_select_state(chip->pinctrl, chip->gpio_switch_ctrl_ufcs);
 		if (rc < 0) {
-			mutex_unlock(&chip->pinctrl_lock);
 			chg_err("set gpio_switch_ctrl_ufcs error, rc=%d\n", rc);
 			return rc;
 		}
 	} else {
 		retry = AUDIO_SWITCH_RETRY_MAX;
 		do {
-			oplus_set_audio_switch_status(1);
+			rc = oplus_set_audio_switch_status(1);
+			if (rc < 0)
+				return rc;
 			status = oplus_get_audio_switch_status();
-			if (!(TYPEC_AUDIO_SWITCH_STATE_FAST_CHG & status) || status < 0) {
+			if (!oplus_audio_switch_status_valid(status) ||
+			    (status & TYPEC_AUDIO_SWITCH_STATE_MASK) !=
+			    TYPEC_AUDIO_SWITCH_STATE_FAST_CHG) {
 				chg_err("set switch to ufcs failed , retry=%d, status = 0x%x\n", retry, status);
 			} else {
 				chg_info("set switch to ufcs success , retry=%d\n", retry);
 				break;
 			}
 		} while (--retry > 0);
-		if (retry <= 0) {
-			mutex_unlock(&chip->pinctrl_lock);
+		if (retry <= 0)
 			return -EFAULT;
-		}
 	}
-	mutex_unlock(&chip->pinctrl_lock);
 
 	return 0;
 }
@@ -259,6 +261,7 @@ static int oplus_dpdm_switch_set_switch_mode(struct oplus_chg_ic_dev *ic_dev,
 
 	chip = oplus_chg_ic_get_drvdata(ic_dev);
 
+	mutex_lock(&chip->pinctrl_lock);
 	switch (mode) {
 	case DPDM_SWITCH_TO_AP:
 		chg_info("dpdm switch to ap\n");
@@ -274,9 +277,12 @@ static int oplus_dpdm_switch_set_switch_mode(struct oplus_chg_ic_dev *ic_dev,
 		break;
 	default:
 		chg_err("not supported mode, mode=%d\n", mode);
-		return -EINVAL;
+		rc = -EINVAL;
+		break;
 	}
-	chip->mode = mode;
+	if (!rc)
+		WRITE_ONCE(chip->mode, mode);
+	mutex_unlock(&chip->pinctrl_lock);
 
 	return rc;
 }
@@ -292,7 +298,7 @@ static int oplus_dpdm_switch_get_switch_mode(struct oplus_chg_ic_dev *ic_dev,
 	}
 
 	chip = oplus_chg_ic_get_drvdata(ic_dev);
-	*mode = chip->mode;
+	*mode = READ_ONCE(chip->mode);
 
 	return 0;
 }

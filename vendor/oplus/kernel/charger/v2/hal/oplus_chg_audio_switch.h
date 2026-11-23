@@ -99,6 +99,8 @@ static int oplus_set_audio_switch_status(int state)
 #if IS_ENABLED(CONFIG_OPLUS_AUDIO_SWITCH_GLINK)
 	switch_cnt = g_audio_switch.audio_switch_cnt;
 	ret = raw_notifier_call_chain(&chg_glink_notifier, state, NULL);
+	if (ret & NOTIFY_STOP_MASK)
+		return notifier_to_errno(ret);
 	if (ret)
 		oplus_set_audio_switch_callback(state);
 #else
